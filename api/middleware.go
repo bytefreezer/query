@@ -28,11 +28,36 @@ func GetAccountIDFromContext(ctx context.Context) string {
 	return accountID
 }
 
+// isPublicEndpoint checks if the path should bypass account_id requirement
+func isPublicEndpoint(path string) bool {
+	// Public API endpoints
+	publicPaths := []string{
+		"/api/v1/health",
+		"/api/v1/limits",
+	}
+	for _, p := range publicPaths {
+		if path == p {
+			return true
+		}
+	}
+	// Static UI files don't need account_id
+	if path == "/" || path == "/favicon.svg" || path == "/index.html" {
+		return true
+	}
+	return false
+}
+
 // AccountIDMiddleware extracts account_id from X-ByteFreezer-Account-ID header
 // and stores it in the request context. Used in shared mode when integrated with UI.
 func AccountIDMiddleware(fallbackAccountID string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip account_id requirement for public endpoints
+			if isPublicEndpoint(r.URL.Path) {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			// Check header for account_id
 			accountID := r.Header.Get("X-ByteFreezer-Account-ID")
 
