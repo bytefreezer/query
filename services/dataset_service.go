@@ -5,7 +5,9 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"regexp"
 	"sort"
 	"strconv"
@@ -392,6 +394,64 @@ func extractPartitionPath(key string) string {
 		}
 	}
 	return ""
+}
+
+// CommonMetadata represents the _common_metadata JSON structure from packer
+type CommonMetadata struct {
+	Version        int                    `json:"version"`
+	Schema         MetadataSchema         `json:"schema"`
+	NumRows        int64                  `json:"num_rows"`
+	TotalSizeBytes int64                  `json:"total_size_bytes"`
+	FileCount      int                    `json:"file_count"`
+	GeneratedBy    string                 `json:"generated_by"`
+	GeneratedAt    string                 `json:"generated_at"`
+}
+
+// MetadataSchema represents the schema structure in _common_metadata
+type MetadataSchema struct {
+	Type     string                 `json:"type"`
+	Fields   []MetadataField        `json:"fields"`
+	Metadata map[string]string      `json:"metadata,omitempty"`
+}
+
+// MetadataField represents a field in the schema
+type MetadataField struct {
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Nullable bool   `json:"nullable"`
+}
+
+// GetCommonMetadata fetches and parses the _common_metadata JSON file from S3
+// This file contains the pre-merged schema from the packer
+func (s *DatasetService) GetCommonMetadata(ctx context.Context, tenantID, datasetID string) (*CommonMetadata, error) {
+	bucket := s.config.S3.Bucket
+	key := fmt.Sprintf("%s/%s/data/parquet/_common_metadata", tenantID, datasetID)
+
+	log.Debugf("Fetching _common_metadata from s3://%s/%s", bucket, key)
+
+	// Get the object from S3
+	obj, err := s.minioClient.GetObject(ctx, bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get _common_metadata object: %w", err)
+	}
+	defer obj.Close()
+
+	// Read the JSON content
+	data, err := io.ReadAll(obj)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read _common_metadata: %w", err)
+	}
+
+	// Parse the JSON
+	var metadata CommonMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return nil, fmt.Errorf("failed to parse _common_metadata JSON: %w", err)
+	}
+
+	log.Debugf("Parsed _common_metadata: version=%d, schema fields=%d, rows=%d, files=%d",
+		metadata.Version, len(metadata.Schema.Fields), metadata.NumRows, metadata.FileCount)
+
+	return &metadata, nil
 }
 
 // parsePartitionTimestamps parses partition path to extract time range
