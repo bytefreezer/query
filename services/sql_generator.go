@@ -50,18 +50,18 @@ func NewSQLGenerator(cfg *config.Config, schemaExtractor *SchemaExtractor, datas
 }
 
 // GenerateSQL converts a natural language question to SQL
-func (g *SQLGenerator) GenerateSQL(ctx context.Context, accountID, datasetID, question string) (string, error) {
+func (g *SQLGenerator) GenerateSQL(ctx context.Context, tenantID, datasetID, question string) (string, error) {
 	// Get schema for prompt
-	schemaText, err := g.schemaExtractor.FormatSchemaForPrompt(ctx, accountID, datasetID)
+	schemaText, err := g.schemaExtractor.FormatSchemaForPrompt(ctx, tenantID, datasetID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get schema: %w", err)
 	}
 
 	// Get the parquet path for this dataset
-	parquetPath := g.datasetService.GetParquetGlob(accountID, datasetID)
+	parquetPath := g.datasetService.GetParquetGlob(tenantID, datasetID)
 
 	// Get recent files for fast queries
-	recentFiles, err := g.datasetService.GetRecentFiles(ctx, accountID, datasetID, 5)
+	recentFiles, err := g.datasetService.GetRecentFiles(ctx, tenantID, datasetID, 5)
 	if err != nil {
 		log.Warnf("Failed to get recent files: %v", err)
 		recentFiles = nil

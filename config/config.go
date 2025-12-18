@@ -25,6 +25,12 @@ type Config struct {
 	S3      S3Config      `mapstructure:"s3"`
 	LLM     LLMConfig     `mapstructure:"llm"`
 	Limits  LimitsConfig  `mapstructure:"limits"`
+	Control ControlConfig `mapstructure:"control"`
+}
+
+// ControlConfig holds control API connection settings (for shared mode)
+type ControlConfig struct {
+	URL string `mapstructure:"url"` // Control API URL, e.g. "http://localhost:8082" (empty = standalone mode)
 }
 
 // LimitsConfig holds query limits for demo/production
@@ -58,7 +64,7 @@ type S3Config struct {
 	SecretKey  string `mapstructure:"secret_key"`
 	Endpoint   string `mapstructure:"endpoint"`
 	Bucket     string `mapstructure:"bucket"`
-	AccountID  string `mapstructure:"account_id"` // Customer/tenant account ID
+	TenantID   string `mapstructure:"tenant_id"` // Tenant ID for standalone mode (S3 paths use tenant_id)
 	SSL        bool   `mapstructure:"ssl"`
 	URLStyle   string `mapstructure:"url_style"` // "path" or "vhost"
 	UseIAMRole bool   `mapstructure:"use_iam_role"`
@@ -158,8 +164,13 @@ func (cfg *Config) Validate() error {
 	if cfg.S3.Bucket == "" {
 		return pkgerrors.New("s3.bucket is required")
 	}
-	// Note: s3.account_id is optional - can be provided via X-ByteFreezer-Account-ID header
-	// for shared mode (when integrated with ByteFreezer UI)
+	// Modes:
+	// - Standalone mode: s3.tenant_id is set (single tenant)
+	// - Shared mode: control.url is set (resolves account_id → tenant_ids via control API)
+	// At least one must be configured
+	if cfg.S3.TenantID == "" && cfg.Control.URL == "" {
+		return pkgerrors.New("either s3.tenant_id (standalone) or control.url (shared mode) is required")
+	}
 	if cfg.LLM.APIKey == "" && cfg.LLM.Provider != "ollama" {
 		return pkgerrors.Errorf("llm.api_key is required for provider %s", cfg.LLM.Provider)
 	}

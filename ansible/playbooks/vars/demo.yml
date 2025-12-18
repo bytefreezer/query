@@ -51,17 +51,21 @@ config:
     port: 8000
 
   # S3/MinIO configuration for Parquet data access
-  # account_id comes from X-ByteFreezer-Account-ID header in shared mode
   s3:
     region: "us-east-1"
     access_key: "{{ s3_access_key | default('AKIAQNXBAHUKIMJP26P6') }}"
     secret_key: "{{ s3_secret_key | default('') }}"
     bucket: "output"
-    # account_id: "" - provided via header from UI
+    # tenant_id: "" - for standalone mode, or use control.url for shared mode
     endpoint: "localhost:9000"
     ssl: false
     url_style: "path"
     use_iam_role: false
+
+  # Control API configuration (for shared mode)
+  # When set, query service will use control API to resolve account_id → tenant_ids
+  control:
+    url: "http://localhost:8082"  # Control API URL (empty for standalone mode)
 
   # LLM configuration
   llm:

@@ -50,8 +50,8 @@ func NewSchemaExtractor(cfg *config.Config, duckdb *DuckDBClient, datasetService
 }
 
 // GetSchema returns the schema for a dataset, using cache if available
-func (s *SchemaExtractor) GetSchema(ctx context.Context, accountID, datasetID string) (*SchemaResponse, error) {
-	cacheKey := accountID + "/" + datasetID
+func (s *SchemaExtractor) GetSchema(ctx context.Context, tenantID, datasetID string) (*SchemaResponse, error) {
+	cacheKey := tenantID + "/" + datasetID
 	s.mu.RLock()
 	if cached, ok := s.cache[cacheKey]; ok && time.Since(cached.CachedAt) < 5*time.Minute {
 		defer s.mu.RUnlock()
@@ -65,18 +65,18 @@ func (s *SchemaExtractor) GetSchema(ctx context.Context, accountID, datasetID st
 	s.mu.RUnlock()
 
 	// Need to refresh cache
-	return s.refreshSchema(ctx, accountID, datasetID)
+	return s.refreshSchema(ctx, tenantID, datasetID)
 }
 
 // refreshSchema extracts fresh schema from parquet files
-func (s *SchemaExtractor) refreshSchema(ctx context.Context, accountID, datasetID string) (*SchemaResponse, error) {
+func (s *SchemaExtractor) refreshSchema(ctx context.Context, tenantID, datasetID string) (*SchemaResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	cacheKey := accountID + "/" + datasetID
+	cacheKey := tenantID + "/" + datasetID
 
 	// Get the parquet glob path for this dataset
-	s3Path := s.datasetService.GetParquetGlob(accountID, datasetID)
+	s3Path := s.datasetService.GetParquetGlob(tenantID, datasetID)
 
 	log.Infof("Extracting schema from: %s", s3Path)
 
@@ -107,8 +107,8 @@ func (s *SchemaExtractor) refreshSchema(ctx context.Context, accountID, datasetI
 }
 
 // FormatSchemaForPrompt formats the schema for LLM prompt injection
-func (s *SchemaExtractor) FormatSchemaForPrompt(ctx context.Context, accountID, datasetID string) (string, error) {
-	schema, err := s.GetSchema(ctx, accountID, datasetID)
+func (s *SchemaExtractor) FormatSchemaForPrompt(ctx context.Context, tenantID, datasetID string) (string, error) {
+	schema, err := s.GetSchema(ctx, tenantID, datasetID)
 	if err != nil {
 		return "", err
 	}

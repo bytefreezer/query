@@ -67,11 +67,14 @@ func main() {
 
 	setLogLevel(cfg.Logging.Level)
 
-	accountInfo := cfg.S3.AccountID
-	if accountInfo == "" {
-		accountInfo = "(shared mode - from header)"
+	// Log mode info
+	var modeInfo string
+	if cfg.Control.URL != "" {
+		modeInfo = fmt.Sprintf("shared mode (control: %s)", cfg.Control.URL)
+	} else {
+		modeInfo = fmt.Sprintf("standalone mode (tenant: %s)", cfg.S3.TenantID)
 	}
-	log.Infof("Configuration loaded: S3 bucket=%s, account_id=%s, LLM provider=%s", cfg.S3.Bucket, accountInfo, cfg.LLM.Provider)
+	log.Infof("Configuration loaded: S3 bucket=%s, %s, LLM provider=%s", cfg.S3.Bucket, modeInfo, cfg.LLM.Provider)
 
 	// Initialize DuckDB client
 	duckdbClient, err := services.NewDuckDBClient(&cfg)
@@ -103,9 +106,10 @@ func main() {
 	api.SetupRoutes(mux, handlers)
 
 	// Apply middleware (order: CORS -> AccountID -> Logging -> Routes)
-	// AccountIDMiddleware extracts account_id from header or falls back to config
+	// AccountIDMiddleware extracts account_id from header for shared mode
+	// In standalone mode, no account_id needed (tenant_id from config)
 	handler := api.CORSMiddleware(
-		api.AccountIDMiddleware(cfg.S3.AccountID)(
+		api.AccountIDMiddleware("")(
 			api.LoggingMiddleware(mux),
 		),
 	)

@@ -35,6 +35,7 @@ func NewHandlers(cfg *config.Config, duckdb *services.DuckDBClient, schema *serv
 // NaturalQueryRequest is the request body for natural language queries
 type NaturalQueryRequest struct {
 	DatasetID string `json:"dataset_id"`
+	TenantID  string `json:"tenant_id"` // Required to locate dataset in S3
 	Question  string `json:"question"`
 }
 
@@ -55,10 +56,12 @@ type QueryResponse struct {
 
 // HealthResponse is the response for health check
 type HealthResponse struct {
-	Status    string `json:"status"`
-	DuckDB    string `json:"duckdb"`
-	S3        string `json:"s3"`
-	AccountID string `json:"account_id"`
+	Status     string `json:"status"`
+	DuckDB     string `json:"duckdb"`
+	S3         string `json:"s3"`
+	Mode       string `json:"mode"`       // "standalone" or "shared"
+	TenantID   string `json:"tenant_id"`  // For standalone mode
+	ControlURL string `json:"control_url"` // For shared mode
 }
 
 // DatasetsResponse is the response for the datasets endpoint
@@ -101,12 +104,6 @@ func (h *Handlers) HandleListDatasets(w http.ResponseWriter, r *http.Request) {
 
 // HandleGenerateQuery handles POST /api/v1/query/generate - generates SQL without executing
 func (h *Handlers) HandleGenerateQuery(w http.ResponseWriter, r *http.Request) {
-	accountID := GetAccountIDFromContext(r.Context())
-	if accountID == "" {
-		writeJSON(w, http.StatusUnauthorized, QueryResponse{Error: "account_id not found in context"})
-		return
-	}
-
 	var req NaturalQueryRequest
 	if err := sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, QueryResponse{Error: "Invalid request body"})
@@ -118,15 +115,20 @@ func (h *Handlers) HandleGenerateQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.TenantID == "" {
+		writeJSON(w, http.StatusBadRequest, QueryResponse{Error: "tenant_id is required"})
+		return
+	}
+
 	if req.Question == "" {
 		writeJSON(w, http.StatusBadRequest, QueryResponse{Error: "question is required"})
 		return
 	}
 
-	log.Infof("Generate query for account %s dataset %s: %s", accountID, req.DatasetID, req.Question)
+	log.Infof("Generate query for tenant %s dataset %s: %s", req.TenantID, req.DatasetID, req.Question)
 
 	// Generate SQL from natural language (don't execute)
-	sql, err := h.sqlGenerator.GenerateSQL(r.Context(), accountID, req.DatasetID, req.Question)
+	sql, err := h.sqlGenerator.GenerateSQL(r.Context(), req.TenantID, req.DatasetID, req.Question)
 	if err != nil {
 		log.Warnf("SQL generation failed: %v", err)
 		writeJSON(w, http.StatusOK, QueryResponse{Error: "Failed to generate SQL: " + err.Error()})
@@ -141,12 +143,6 @@ func (h *Handlers) HandleGenerateQuery(w http.ResponseWriter, r *http.Request) {
 
 // HandleNaturalQuery handles POST /api/v1/query/natural - generates and executes
 func (h *Handlers) HandleNaturalQuery(w http.ResponseWriter, r *http.Request) {
-	accountID := GetAccountIDFromContext(r.Context())
-	if accountID == "" {
-		writeJSON(w, http.StatusUnauthorized, QueryResponse{Error: "account_id not found in context"})
-		return
-	}
-
 	var req NaturalQueryRequest
 	if err := sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, QueryResponse{Error: "Invalid request body"})
@@ -158,15 +154,20 @@ func (h *Handlers) HandleNaturalQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.TenantID == "" {
+		writeJSON(w, http.StatusBadRequest, QueryResponse{Error: "tenant_id is required"})
+		return
+	}
+
 	if req.Question == "" {
 		writeJSON(w, http.StatusBadRequest, QueryResponse{Error: "question is required"})
 		return
 	}
 
-	log.Infof("Natural query on account %s dataset %s: %s", accountID, req.DatasetID, req.Question)
+	log.Infof("Natural query on tenant %s dataset %s: %s", req.TenantID, req.DatasetID, req.Question)
 
 	// Generate SQL from natural language
-	sql, err := h.sqlGenerator.GenerateSQL(r.Context(), accountID, req.DatasetID, req.Question)
+	sql, err := h.sqlGenerator.GenerateSQL(r.Context(), req.TenantID, req.DatasetID, req.Question)
 	if err != nil {
 		log.Warnf("SQL generation failed: %v", err)
 		writeJSON(w, http.StatusOK, QueryResponse{Error: "Failed to generate SQL: " + err.Error()})
@@ -221,9 +222,9 @@ func (h *Handlers) HandleSQLQuery(w http.ResponseWriter, r *http.Request) {
 
 // HandleSchema handles GET /api/v1/schema
 func (h *Handlers) HandleSchema(w http.ResponseWriter, r *http.Request) {
-	accountID := GetAccountIDFromContext(r.Context())
-	if accountID == "" {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "account_id not found in context"})
+	tenantID := r.URL.Query().Get("tenant_id")
+	if tenantID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tenant_id query parameter is required"})
 		return
 	}
 
@@ -233,7 +234,7 @@ func (h *Handlers) HandleSchema(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	schema, err := h.schemaExtractor.GetSchema(r.Context(), accountID, datasetID)
+	schema, err := h.schemaExtractor.GetSchema(r.Context(), tenantID, datasetID)
 	if err != nil {
 		log.Warnf("Schema extraction failed: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -252,27 +253,32 @@ func (h *Handlers) HandleHealth(w http.ResponseWriter, r *http.Request) {
 		duckdbStatus = "error: " + result.Error
 	}
 
-	// Test S3 access by listing datasets (use account_id from context or config)
-	accountID := GetAccountIDFromContext(r.Context())
-	if accountID == "" {
-		accountID = h.config.S3.AccountID
-	}
-
+	// Determine mode and test S3
+	var mode, tenantID, controlURL string
 	s3Status := "accessible"
-	if accountID != "" {
-		_, err := h.datasetService.ListDatasets(r.Context(), accountID)
+
+	if h.datasetService.IsSharedMode() {
+		mode = "shared"
+		controlURL = h.config.Control.URL
+		// In shared mode, skip S3 test (needs account_id from auth)
+		s3Status = "not tested (shared mode)"
+	} else {
+		mode = "standalone"
+		tenantID = h.config.S3.TenantID
+		// Test S3 access by listing datasets
+		_, err := h.datasetService.ListDatasets(r.Context(), "")
 		if err != nil {
 			s3Status = "error: " + err.Error()
 		}
-	} else {
-		s3Status = "not tested (no account_id)"
 	}
 
 	response := HealthResponse{
-		Status:    "ok",
-		DuckDB:    duckdbStatus,
-		S3:        s3Status,
-		AccountID: accountID,
+		Status:     "ok",
+		DuckDB:     duckdbStatus,
+		S3:         s3Status,
+		Mode:       mode,
+		TenantID:   tenantID,
+		ControlURL: controlURL,
 	}
 
 	if result.Error != "" {
