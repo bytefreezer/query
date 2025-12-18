@@ -181,7 +181,7 @@ func (c *DuckDBClient) GetParquetSchema(ctx context.Context, s3Path string) ([]C
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	query := fmt.Sprintf("DESCRIBE SELECT * FROM read_parquet('%s', hive_partitioning=true) LIMIT 0", s3Path)
+	query := fmt.Sprintf("DESCRIBE SELECT * FROM read_parquet('%s', hive_partitioning=true, union_by_name=true) LIMIT 0", s3Path)
 
 	rows, err := c.db.QueryContext(ctx, query)
 	if err != nil {
