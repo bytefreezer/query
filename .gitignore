@@ -1,9 +1,6 @@
-# Binaries
-# bytefreezer-query
+# Binaries (root level only, not dist/)
+bytefreezer-query
 *.exe
-
-# Dist directory (built artifacts)
-ansible/playbooks/dist/
 
 # Config files with secrets
 config-local.yaml
