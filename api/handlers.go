@@ -77,24 +77,36 @@ type LimitsResponse struct {
 
 // HandleListDatasets handles GET /api/v1/datasets
 func (h *Handlers) HandleListDatasets(w http.ResponseWriter, r *http.Request) {
-	datasets, err := h.datasetService.ListDatasets(r.Context())
+	accountID := GetAccountIDFromContext(r.Context())
+	if accountID == "" {
+		writeJSON(w, http.StatusUnauthorized, DatasetsResponse{Error: "account_id not found in context"})
+		return
+	}
+
+	datasets, err := h.datasetService.ListDatasets(r.Context(), accountID)
 	if err != nil {
 		log.Warnf("Failed to list datasets: %v", err)
 		writeJSON(w, http.StatusInternalServerError, DatasetsResponse{
-			AccountID: h.config.S3.AccountID,
+			AccountID: accountID,
 			Error:     err.Error(),
 		})
 		return
 	}
 
 	writeJSON(w, http.StatusOK, DatasetsResponse{
-		AccountID: h.config.S3.AccountID,
+		AccountID: accountID,
 		Datasets:  datasets,
 	})
 }
 
 // HandleGenerateQuery handles POST /api/v1/query/generate - generates SQL without executing
 func (h *Handlers) HandleGenerateQuery(w http.ResponseWriter, r *http.Request) {
+	accountID := GetAccountIDFromContext(r.Context())
+	if accountID == "" {
+		writeJSON(w, http.StatusUnauthorized, QueryResponse{Error: "account_id not found in context"})
+		return
+	}
+
 	var req NaturalQueryRequest
 	if err := sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, QueryResponse{Error: "Invalid request body"})
@@ -111,10 +123,10 @@ func (h *Handlers) HandleGenerateQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Infof("Generate query for dataset %s: %s", req.DatasetID, req.Question)
+	log.Infof("Generate query for account %s dataset %s: %s", accountID, req.DatasetID, req.Question)
 
 	// Generate SQL from natural language (don't execute)
-	sql, err := h.sqlGenerator.GenerateSQL(r.Context(), req.DatasetID, req.Question)
+	sql, err := h.sqlGenerator.GenerateSQL(r.Context(), accountID, req.DatasetID, req.Question)
 	if err != nil {
 		log.Warnf("SQL generation failed: %v", err)
 		writeJSON(w, http.StatusOK, QueryResponse{Error: "Failed to generate SQL: " + err.Error()})
@@ -129,6 +141,12 @@ func (h *Handlers) HandleGenerateQuery(w http.ResponseWriter, r *http.Request) {
 
 // HandleNaturalQuery handles POST /api/v1/query/natural - generates and executes
 func (h *Handlers) HandleNaturalQuery(w http.ResponseWriter, r *http.Request) {
+	accountID := GetAccountIDFromContext(r.Context())
+	if accountID == "" {
+		writeJSON(w, http.StatusUnauthorized, QueryResponse{Error: "account_id not found in context"})
+		return
+	}
+
 	var req NaturalQueryRequest
 	if err := sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, QueryResponse{Error: "Invalid request body"})
@@ -145,10 +163,10 @@ func (h *Handlers) HandleNaturalQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Infof("Natural query on dataset %s: %s", req.DatasetID, req.Question)
+	log.Infof("Natural query on account %s dataset %s: %s", accountID, req.DatasetID, req.Question)
 
 	// Generate SQL from natural language
-	sql, err := h.sqlGenerator.GenerateSQL(r.Context(), req.DatasetID, req.Question)
+	sql, err := h.sqlGenerator.GenerateSQL(r.Context(), accountID, req.DatasetID, req.Question)
 	if err != nil {
 		log.Warnf("SQL generation failed: %v", err)
 		writeJSON(w, http.StatusOK, QueryResponse{Error: "Failed to generate SQL: " + err.Error()})
@@ -203,13 +221,19 @@ func (h *Handlers) HandleSQLQuery(w http.ResponseWriter, r *http.Request) {
 
 // HandleSchema handles GET /api/v1/schema
 func (h *Handlers) HandleSchema(w http.ResponseWriter, r *http.Request) {
+	accountID := GetAccountIDFromContext(r.Context())
+	if accountID == "" {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "account_id not found in context"})
+		return
+	}
+
 	datasetID := r.URL.Query().Get("dataset_id")
 	if datasetID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "dataset_id query parameter is required"})
 		return
 	}
 
-	schema, err := h.schemaExtractor.GetSchema(r.Context(), datasetID)
+	schema, err := h.schemaExtractor.GetSchema(r.Context(), accountID, datasetID)
 	if err != nil {
 		log.Warnf("Schema extraction failed: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -228,21 +252,30 @@ func (h *Handlers) HandleHealth(w http.ResponseWriter, r *http.Request) {
 		duckdbStatus = "error: " + result.Error
 	}
 
-	// Test S3 access by listing datasets
+	// Test S3 access by listing datasets (use account_id from context or config)
+	accountID := GetAccountIDFromContext(r.Context())
+	if accountID == "" {
+		accountID = h.config.S3.AccountID
+	}
+
 	s3Status := "accessible"
-	_, err := h.datasetService.ListDatasets(r.Context())
-	if err != nil {
-		s3Status = "error: " + err.Error()
+	if accountID != "" {
+		_, err := h.datasetService.ListDatasets(r.Context(), accountID)
+		if err != nil {
+			s3Status = "error: " + err.Error()
+		}
+	} else {
+		s3Status = "not tested (no account_id)"
 	}
 
 	response := HealthResponse{
 		Status:    "ok",
 		DuckDB:    duckdbStatus,
 		S3:        s3Status,
-		AccountID: h.config.S3.AccountID,
+		AccountID: accountID,
 	}
 
-	if result.Error != "" || err != nil {
+	if result.Error != "" {
 		response.Status = "degraded"
 	}
 

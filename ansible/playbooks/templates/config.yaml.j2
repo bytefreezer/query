@@ -21,7 +21,9 @@ s3:
   access_key: "{{ config.s3.access_key }}"
   secret_key: "{{ config.s3.secret_key }}"
   bucket: "{{ config.s3.bucket }}"
+{% if config.s3.account_id | default('') %}
   account_id: "{{ config.s3.account_id }}"
+{% endif %}
 {% if config.s3.endpoint %}
   endpoint: "{{ config.s3.endpoint }}"
 {% endif %}

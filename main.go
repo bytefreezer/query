@@ -67,7 +67,11 @@ func main() {
 
 	setLogLevel(cfg.Logging.Level)
 
-	log.Infof("Configuration loaded: S3 bucket=%s, account_id=%s, LLM provider=%s", cfg.S3.Bucket, cfg.S3.AccountID, cfg.LLM.Provider)
+	accountInfo := cfg.S3.AccountID
+	if accountInfo == "" {
+		accountInfo = "(shared mode - from header)"
+	}
+	log.Infof("Configuration loaded: S3 bucket=%s, account_id=%s, LLM provider=%s", cfg.S3.Bucket, accountInfo, cfg.LLM.Provider)
 
 	// Initialize DuckDB client
 	duckdbClient, err := services.NewDuckDBClient(&cfg)
@@ -98,8 +102,13 @@ func main() {
 	mux := http.NewServeMux()
 	api.SetupRoutes(mux, handlers)
 
-	// Apply middleware
-	handler := api.CORSMiddleware(api.LoggingMiddleware(mux))
+	// Apply middleware (order: CORS -> AccountID -> Logging -> Routes)
+	// AccountIDMiddleware extracts account_id from header or falls back to config
+	handler := api.CORSMiddleware(
+		api.AccountIDMiddleware(cfg.S3.AccountID)(
+			api.LoggingMiddleware(mux),
+		),
+	)
 
 	// Create server
 	server := &http.Server{

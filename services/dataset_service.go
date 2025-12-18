@@ -56,9 +56,11 @@ func NewDatasetService(cfg *config.Config) (*DatasetService, error) {
 	}, nil
 }
 
-// ListDatasets returns all datasets available for the configured account
-func (s *DatasetService) ListDatasets(ctx context.Context) ([]Dataset, error) {
-	accountID := s.config.S3.AccountID
+// ListDatasets returns all datasets available for the given account
+func (s *DatasetService) ListDatasets(ctx context.Context, accountID string) ([]Dataset, error) {
+	if accountID == "" {
+		return nil, fmt.Errorf("account_id is required")
+	}
 	bucket := s.config.S3.Bucket
 
 	// List objects with prefix to find dataset directories
@@ -142,8 +144,10 @@ func (s *DatasetService) getDatasetSize(ctx context.Context, bucket, basePath st
 }
 
 // GetDataset returns a specific dataset by ID
-func (s *DatasetService) GetDataset(ctx context.Context, datasetID string) (*Dataset, error) {
-	accountID := s.config.S3.AccountID
+func (s *DatasetService) GetDataset(ctx context.Context, accountID, datasetID string) (*Dataset, error) {
+	if accountID == "" {
+		return nil, fmt.Errorf("account_id is required")
+	}
 
 	// Build the parquet glob path
 	basePath := fmt.Sprintf("%s/%s/data/parquet", accountID, datasetID)
@@ -175,8 +179,7 @@ func (s *DatasetService) GetDataset(ctx context.Context, datasetID string) (*Dat
 }
 
 // GetParquetGlob returns the S3 glob path for a dataset's parquet files
-func (s *DatasetService) GetParquetGlob(datasetID string) string {
-	accountID := s.config.S3.AccountID
+func (s *DatasetService) GetParquetGlob(accountID, datasetID string) string {
 	basePath := fmt.Sprintf("%s/%s/data/parquet", accountID, datasetID)
 	return s.buildS3Path(basePath + "/**/*.parquet")
 }
@@ -198,8 +201,7 @@ type RecentFile struct {
 }
 
 // GetRecentFiles returns the N most recent parquet files for a dataset
-func (s *DatasetService) GetRecentFiles(ctx context.Context, datasetID string, limit int) ([]RecentFile, error) {
-	accountID := s.config.S3.AccountID
+func (s *DatasetService) GetRecentFiles(ctx context.Context, accountID, datasetID string, limit int) ([]RecentFile, error) {
 	bucket := s.config.S3.Bucket
 	prefix := fmt.Sprintf("%s/%s/data/parquet/", accountID, datasetID)
 
@@ -253,8 +255,8 @@ func (s *DatasetService) GetRecentFiles(ctx context.Context, datasetID string, l
 }
 
 // GetFilesInTimeRange returns parquet files that overlap with the given time range
-func (s *DatasetService) GetFilesInTimeRange(ctx context.Context, datasetID string, start, end time.Time, limit int) ([]RecentFile, error) {
-	allFiles, err := s.GetRecentFiles(ctx, datasetID, 1000) // Get more files for filtering
+func (s *DatasetService) GetFilesInTimeRange(ctx context.Context, accountID, datasetID string, start, end time.Time, limit int) ([]RecentFile, error) {
+	allFiles, err := s.GetRecentFiles(ctx, accountID, datasetID, 1000) // Get more files for filtering
 	if err != nil {
 		return nil, err
 	}

@@ -158,9 +158,8 @@ func (cfg *Config) Validate() error {
 	if cfg.S3.Bucket == "" {
 		return pkgerrors.New("s3.bucket is required")
 	}
-	if cfg.S3.AccountID == "" {
-		return pkgerrors.New("s3.account_id is required")
-	}
+	// Note: s3.account_id is optional - can be provided via X-ByteFreezer-Account-ID header
+	// for shared mode (when integrated with ByteFreezer UI)
 	if cfg.LLM.APIKey == "" && cfg.LLM.Provider != "ollama" {
 		return pkgerrors.Errorf("llm.api_key is required for provider %s", cfg.LLM.Provider)
 	}

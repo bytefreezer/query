@@ -51,13 +51,13 @@ config:
     port: 8000
 
   # S3/MinIO configuration for Parquet data access
-  # Account ID determines which datasets are visible
+  # account_id comes from X-ByteFreezer-Account-ID header in shared mode
   s3:
     region: "us-east-1"
     access_key: "{{ s3_access_key | default('AKIAQNXBAHUKIMJP26P6') }}"
     secret_key: "{{ s3_secret_key | default('') }}"
     bucket: "output"
-    account_id: "af6jwik2olex"
+    # account_id: "" - provided via header from UI
     endpoint: "localhost:9000"
     ssl: false
     url_style: "path"

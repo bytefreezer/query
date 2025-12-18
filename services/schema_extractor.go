@@ -50,9 +50,10 @@ func NewSchemaExtractor(cfg *config.Config, duckdb *DuckDBClient, datasetService
 }
 
 // GetSchema returns the schema for a dataset, using cache if available
-func (s *SchemaExtractor) GetSchema(ctx context.Context, datasetID string) (*SchemaResponse, error) {
+func (s *SchemaExtractor) GetSchema(ctx context.Context, accountID, datasetID string) (*SchemaResponse, error) {
+	cacheKey := accountID + "/" + datasetID
 	s.mu.RLock()
-	if cached, ok := s.cache[datasetID]; ok && time.Since(cached.CachedAt) < 5*time.Minute {
+	if cached, ok := s.cache[cacheKey]; ok && time.Since(cached.CachedAt) < 5*time.Minute {
 		defer s.mu.RUnlock()
 		return &SchemaResponse{
 			DatasetID:  datasetID,
@@ -64,16 +65,18 @@ func (s *SchemaExtractor) GetSchema(ctx context.Context, datasetID string) (*Sch
 	s.mu.RUnlock()
 
 	// Need to refresh cache
-	return s.refreshSchema(ctx, datasetID)
+	return s.refreshSchema(ctx, accountID, datasetID)
 }
 
 // refreshSchema extracts fresh schema from parquet files
-func (s *SchemaExtractor) refreshSchema(ctx context.Context, datasetID string) (*SchemaResponse, error) {
+func (s *SchemaExtractor) refreshSchema(ctx context.Context, accountID, datasetID string) (*SchemaResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	cacheKey := accountID + "/" + datasetID
+
 	// Get the parquet glob path for this dataset
-	s3Path := s.datasetService.GetParquetGlob(datasetID)
+	s3Path := s.datasetService.GetParquetGlob(accountID, datasetID)
 
 	log.Infof("Extracting schema from: %s", s3Path)
 
@@ -86,7 +89,7 @@ func (s *SchemaExtractor) refreshSchema(ctx context.Context, datasetID string) (
 	partitions := detectPartitions(columns)
 
 	// Update cache
-	s.cache[datasetID] = &SchemaCache{
+	s.cache[cacheKey] = &SchemaCache{
 		Columns:    columns,
 		Partitions: partitions,
 		SamplePath: s3Path,
@@ -104,8 +107,8 @@ func (s *SchemaExtractor) refreshSchema(ctx context.Context, datasetID string) (
 }
 
 // FormatSchemaForPrompt formats the schema for LLM prompt injection
-func (s *SchemaExtractor) FormatSchemaForPrompt(ctx context.Context, datasetID string) (string, error) {
-	schema, err := s.GetSchema(ctx, datasetID)
+func (s *SchemaExtractor) FormatSchemaForPrompt(ctx context.Context, accountID, datasetID string) (string, error) {
+	schema, err := s.GetSchema(ctx, accountID, datasetID)
 	if err != nil {
 		return "", err
 	}
