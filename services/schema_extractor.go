@@ -68,17 +68,23 @@ func (s *SchemaExtractor) GetSchema(ctx context.Context, tenantID, datasetID str
 	return s.refreshSchema(ctx, tenantID, datasetID)
 }
 
-// refreshSchema extracts fresh schema from parquet files
+// refreshSchema extracts schema from the most recent parquet file
+// Uses the glob pattern but DuckDB reads schema from the first matching file
 func (s *SchemaExtractor) refreshSchema(ctx context.Context, tenantID, datasetID string) (*SchemaResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	cacheKey := tenantID + "/" + datasetID
 
-	// Get the parquet glob path for this dataset
-	s3Path := s.datasetService.GetParquetGlob(tenantID, datasetID)
+	// Get the most recent parquet files for this dataset
+	// The packer maintains unified schema across all files, so any recent file has the complete schema
+	recentFiles, err := s.datasetService.GetRecentFiles(ctx, tenantID, datasetID, 1)
+	if err != nil || len(recentFiles) == 0 {
+		return nil, fmt.Errorf("no parquet files found for dataset %s", datasetID)
+	}
 
-	log.Infof("Extracting schema from: %s", s3Path)
+	s3Path := recentFiles[0].Path
+	log.Infof("Extracting schema from recent file: %s", s3Path)
 
 	columns, err := s.duckdbClient.GetParquetSchema(ctx, s3Path)
 	if err != nil {

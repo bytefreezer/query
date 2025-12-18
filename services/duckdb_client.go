@@ -176,32 +176,42 @@ func (c *DuckDBClient) ExecuteQuery(ctx context.Context, sqlQuery string, timeou
 	}
 }
 
-// GetParquetSchema extracts schema from a parquet file
+// GetParquetSchema extracts schema from a parquet file or metadata file
 func (c *DuckDBClient) GetParquetSchema(ctx context.Context, s3Path string) ([]ColumnInfo, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	query := fmt.Sprintf("DESCRIBE SELECT * FROM read_parquet('%s', hive_partitioning=true, union_by_name=true) LIMIT 0", s3Path)
+	// Use parquet_schema() to get column names and types
+	query := fmt.Sprintf("SELECT name, type FROM parquet_schema('%s')", s3Path)
 
 	rows, err := c.db.QueryContext(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to describe parquet: %w", err)
+		return nil, fmt.Errorf("failed to get parquet schema: %w", err)
 	}
 	defer rows.Close()
 
 	var columns []ColumnInfo
 	for rows.Next() {
-		var name, dtype string
-		var null, key, defaultVal, extra interface{}
+		var name string
+		var dtype interface{} // type can be NULL for schema group elements
 
-		// DESCRIBE returns: column_name, column_type, null, key, default, extra
-		if err := rows.Scan(&name, &dtype, &null, &key, &defaultVal, &extra); err != nil {
+		if err := rows.Scan(&name, &dtype); err != nil {
 			return nil, fmt.Errorf("failed to scan schema row: %w", err)
+		}
+
+		// Skip internal parquet schema elements (groups with NULL type)
+		if dtype == nil || name == "duckdb_schema" {
+			continue
+		}
+
+		dtypeStr, ok := dtype.(string)
+		if !ok {
+			continue
 		}
 
 		columns = append(columns, ColumnInfo{
 			Name: name,
-			Type: dtype,
+			Type: dtypeStr,
 		})
 	}
 

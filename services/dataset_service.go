@@ -271,6 +271,13 @@ func (s *DatasetService) GetParquetGlob(tenantID, datasetID string) string {
 	return s.buildS3Path(basePath + "/**/*.parquet")
 }
 
+// GetMetadataPath returns the S3 path to the _common_metadata file
+// This file contains the pre-merged schema from the packer
+func (s *DatasetService) GetMetadataPath(tenantID, datasetID string) string {
+	basePath := fmt.Sprintf("%s/%s/data/parquet/_common_metadata", tenantID, datasetID)
+	return s.buildS3Path(basePath)
+}
+
 // buildS3Path constructs the full S3 URL for DuckDB
 func (s *DatasetService) buildS3Path(path string) string {
 	return fmt.Sprintf("s3://%s/%s", s.config.S3.Bucket, path)
