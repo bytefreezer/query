@@ -1,0 +1,183 @@
+---
+# AWX Job Template: ByteFreezer Query - Demo Install
+# Description: Install ByteFreezer Query service from local binary
+# Survey Variables: claude_api_key, s3_access_key, s3_secret_key
+- name: Install and configure ByteFreezer Query service (Demo)
+  hosts: all
+  become: yes
+  gather_facts: yes
+  vars_files:
+    - vars/demo.yml
+
+  pre_tasks:
+    # Always clean up existing installation before reinstalling
+    - name: Stop and disable existing service
+      ansible.builtin.shell: |
+        sudo systemctl stop {{ service.name }} || true
+        sudo systemctl disable {{ service.name }} || true
+        timeout 30 sudo systemctl daemon-reload || echo "daemon-reload completed or timed out"
+      ignore_errors: yes
+
+    - name: Remove existing systemd service file
+      ansible.builtin.shell: |
+        sudo rm -f "{{ paths.service_path }}"
+        timeout 30 sudo systemctl daemon-reload || echo "daemon-reload completed or timed out"
+      ignore_errors: yes
+
+    - name: Remove existing logrotate configuration
+      ansible.builtin.shell: |
+        sudo rm -f "{{ paths.logrotate_path }}"
+      ignore_errors: yes
+
+    - name: Remove existing binary
+      ansible.builtin.shell: |
+        sudo rm -f "{{ paths.binary_path }}"
+      ignore_errors: yes
+
+    - name: Remove existing configuration directory
+      ansible.builtin.shell: |
+        sudo rm -rf "{{ paths.config_dir }}"
+      ignore_errors: yes
+
+    - name: Remove existing log directory
+      ansible.builtin.shell: |
+        sudo rm -rf "{{ paths.log_dir }}"
+      ignore_errors: yes
+
+  tasks:
+
+    - name: Copy binary to destination
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/dist/bytefreezer-query"
+        dest: "{{ paths.binary_path }}"
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Ensure config directory exists
+      ansible.builtin.file:
+        path: "{{ paths.config_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Ensure log directory exists
+      ansible.builtin.file:
+        path: "{{ paths.log_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Ensure data directory exists
+      ansible.builtin.file:
+        path: "{{ paths.data_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Ensure prompts directory exists
+      ansible.builtin.file:
+        path: "{{ paths.prompts_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Ensure UI directory exists
+      ansible.builtin.file:
+        path: "{{ paths.ui_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Copy prompts directory
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/dist/prompts/"
+        dest: "{{ paths.prompts_dir }}/"
+        owner: root
+        group: root
+        mode: '0644'
+        directory_mode: '0755'
+
+    - name: Copy UI directory
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/dist/ui/"
+        dest: "{{ paths.ui_dir }}/"
+        owner: root
+        group: root
+        mode: '0644'
+        directory_mode: '0755'
+
+    - name: Generate configuration file
+      ansible.builtin.template:
+        src: templates/config.yaml.j2
+        dest: "{{ paths.config_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Install logrotate configuration
+      ansible.builtin.template:
+        src: templates/logrotate.j2
+        dest: "{{ paths.logrotate_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Create systemd service file
+      ansible.builtin.template:
+        src: templates/bytefreezer-query.service.j2
+        dest: "{{ paths.service_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Enable and start service
+      ansible.builtin.systemd:
+        name: "{{ service.name }}"
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    - name: Install nginx configuration
+      ansible.builtin.template:
+        src: templates/nginx-query.conf.j2
+        dest: /etc/nginx/sites-available/bytefreezer-query.conf
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Enable nginx site
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/bytefreezer-query.conf
+        dest: /etc/nginx/sites-enabled/bytefreezer-query.conf
+        state: link
+
+    - name: Test nginx configuration
+      ansible.builtin.command: nginx -t
+      register: nginx_test
+      changed_when: false
+
+    - name: Reload nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: reloaded
+      when: nginx_test.rc == 0
+
+  post_tasks:
+    - name: Display installation status
+      debug:
+        msg:
+          - "ByteFreezer Query installation completed!"
+          - "Binary: {{ paths.binary_path }}"
+          - "Config: {{ paths.config_path }}"
+          - "Logs: {{ paths.log_dir }}"
+          - "Data: {{ paths.data_dir }}"
+          - "UI: {{ paths.ui_dir }}"
+          - "Service: systemctl status {{ service.name }}"
+          - "Internal: http://127.0.0.1:{{ config.server.port }}"
+          - "External: https://query.bytefreezer.com"

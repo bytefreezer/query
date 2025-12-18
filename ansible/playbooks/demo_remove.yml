@@ -1,0 +1,78 @@
+---
+# AWX Job Template: ByteFreezer Query - Remove Service
+# Description: Remove ByteFreezer Query service and optionally data
+# Survey Variables: remove_data_dir
+- name: Remove ByteFreezer Query service (Demo)
+  hosts: all
+  become: yes
+  gather_facts: yes
+  vars_files:
+    - vars/demo.yml
+
+  pre_tasks:
+    - name: Check if service exists
+      ansible.builtin.stat:
+        path: "{{ paths.service_path }}"
+      register: service_exists
+
+    - name: Display removal information
+      debug:
+        msg:
+          - "Removing ByteFreezer Query service..."
+          - "Service exists: {{ service_exists.stat.exists }}"
+
+  tasks:
+    - name: Stop and disable service
+      ansible.builtin.shell: |
+        sudo systemctl stop {{ service.name }} || true
+        sudo systemctl disable {{ service.name }} || true
+        timeout 30 sudo systemctl daemon-reload || echo "daemon-reload completed or timed out"
+      when: service_exists.stat.exists
+      ignore_errors: yes
+
+    - name: Remove systemd service file
+      ansible.builtin.shell: |
+        sudo rm -f "{{ paths.service_path }}"
+        timeout 30 sudo systemctl daemon-reload || echo "daemon-reload completed or timed out"
+      ignore_errors: yes
+
+    - name: Remove logrotate configuration
+      ansible.builtin.shell: |
+        sudo rm -f "{{ paths.logrotate_path }}"
+      ignore_errors: yes
+
+    - name: Remove binary
+      ansible.builtin.shell: |
+        sudo rm -f "{{ paths.binary_path }}"
+      ignore_errors: yes
+
+    - name: Remove configuration directory
+      ansible.builtin.shell: |
+        sudo rm -rf "{{ paths.config_dir }}"
+      ignore_errors: yes
+
+    - name: Remove log directory
+      ansible.builtin.shell: |
+        sudo rm -rf "{{ paths.log_dir }}"
+      ignore_errors: yes
+
+    - name: Remove data directory (only if explicitly requested)
+      ansible.builtin.shell: |
+        sudo rm -rf "{{ paths.data_dir }}"
+      when: remove.data_dir
+      ignore_errors: yes
+
+  post_tasks:
+    - name: Verify removal
+      ansible.builtin.stat:
+        path: "{{ paths.service_path }}"
+      register: service_removed
+
+    - name: Display removal status
+      debug:
+        msg:
+          - "ByteFreezer Query removal completed!"
+          - "Service removed: {{ not service_removed.stat.exists }}"
+          - "Binary removed: {{ paths.binary_path }}"
+          - "Directories removed: {{ paths.config_dir }}, {{ paths.log_dir }}"
+          - "Data directory preserved: {{ paths.data_dir }} (unless remove_data_dir=true)"

@@ -1,0 +1,23 @@
+# Binaries
+# bytefreezer-query
+*.exe
+
+# Dist directory (built artifacts)
+ansible/playbooks/dist/
+
+# Config files with secrets
+config-local.yaml
+config.yaml
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/

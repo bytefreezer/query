@@ -1,0 +1,85 @@
+---
+# ByteFreezer Query - Managed Variables Configuration
+# AWX/Tower Compatible - Uses survey variables where appropriate
+
+# GitHub repository
+github_repo: "bytefreezer/query"
+version: "{{ bytefreezer_query_version | default('latest') }}"
+
+# AWX Survey Variables (secrets only - NOT stored in git)
+# claude_api_key: ""    # AWX survey variable for Claude AI
+# s3_access_key: ""     # AWX survey variable for MinIO access key
+# s3_secret_key: ""     # AWX survey variable for MinIO secret key
+
+# Configuration options (edit here, not in AWX)
+enable_debug_logging: false
+
+# Service configuration
+service:
+  name: "bytefreezer-query"
+  user: "root"
+  group: "root"
+
+# File paths
+paths:
+  binary_dir: "/usr/local/bin"
+  binary_path: "/usr/local/bin/bytefreezer-query"
+  config_dir: "/etc/bytefreezer-query"
+  config_path: "/etc/bytefreezer-query/config.yaml"
+  log_dir: "/var/log/bytefreezer-query"
+  data_dir: "/var/lib/bytefreezer-query"
+  prompts_dir: "/etc/bytefreezer-query/prompts"
+  ui_dir: "/etc/bytefreezer-query/ui"
+  service_path: "/etc/systemd/system/bytefreezer-query.service"
+  logrotate_path: "/etc/logrotate.d/bytefreezer-query"
+
+# Log rotation settings
+logrotate:
+  rotate_count: 7
+
+# Application configuration
+config:
+  app:
+    name: "bytefreezer-query"
+    version: "1.0.0"
+
+  logging:
+    level: "{{ 'debug' if enable_debug_logging else 'info' }}"
+    encoding: "console"
+
+  server:
+    port: 8000
+
+  # S3/MinIO configuration for Parquet data access
+  # tp3 managed environment - connects to MinIO on tp2
+  # Account ID determines which datasets are visible
+  s3:
+    region: "us-east-1"
+    access_key: "{{ s3_access_key | default('AKIAQNXBAHUKIMJP26P6') }}"
+    secret_key: "{{ s3_secret_key | default('') }}"
+    bucket: "output"
+    account_id: "{{ s3_account_id | default('') }}"
+    endpoint: "tp2.bytefreezer.net:9000"
+    ssl: false
+    url_style: "path"
+    use_iam_role: false
+
+  # LLM configuration
+  llm:
+    provider: "anthropic"  # anthropic, openai, or ollama
+    model: "claude-sonnet-4-20250514"
+    ollama_host: "http://localhost:11434"
+
+# Download configuration for install.yml
+download:
+  url: "https://github.com/{{ github_repo }}/releases/{{ 'latest/download' if version == 'latest' else 'download/' + version }}/bytefreezer-query-linux-amd64.tar.gz"
+
+# Docker image configuration for docker_install.yml
+docker:
+  image_name: "ghcr.io/bytefreezer/query"
+  tag: "{{ bytefreezer_query_version | default('latest') }}"
+  force_pull: false
+
+# Remove configuration
+remove:
+  data_dir: "{{ bytefreezer_query_remove_data_dir | default(false) }}"
