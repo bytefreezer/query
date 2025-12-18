@@ -86,7 +86,10 @@ func (h *Handlers) HandleListDatasets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	datasets, err := h.datasetService.ListDatasets(r.Context(), accountID)
+	// Get auth token to forward to control API
+	authToken := GetAuthTokenFromContext(r.Context())
+
+	datasets, err := h.datasetService.ListDatasets(r.Context(), accountID, authToken)
 	if err != nil {
 		log.Warnf("Failed to list datasets: %v", err)
 		writeJSON(w, http.StatusInternalServerError, DatasetsResponse{
@@ -266,7 +269,7 @@ func (h *Handlers) HandleHealth(w http.ResponseWriter, r *http.Request) {
 		mode = "standalone"
 		tenantID = h.config.S3.TenantID
 		// Test S3 access by listing datasets
-		_, err := h.datasetService.ListDatasets(r.Context(), "")
+		_, err := h.datasetService.ListDatasets(r.Context(), "", "")
 		if err != nil {
 			s3Status = "error: " + err.Error()
 		}

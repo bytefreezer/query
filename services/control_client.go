@@ -63,7 +63,7 @@ func NewControlClient(cfg *config.Config) *ControlClient {
 }
 
 // GetTenantsForAccount returns all tenants for an account
-func (c *ControlClient) GetTenantsForAccount(ctx context.Context, accountID string) ([]Tenant, error) {
+func (c *ControlClient) GetTenantsForAccount(ctx context.Context, accountID string, authToken string) ([]Tenant, error) {
 	if c == nil {
 		return nil, fmt.Errorf("control client not configured (standalone mode)")
 	}
@@ -74,6 +74,11 @@ func (c *ControlClient) GetTenantsForAccount(ctx context.Context, accountID stri
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Forward auth token if provided
+	if authToken != "" {
+		req.Header.Set("Authorization", authToken)
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -96,7 +101,7 @@ func (c *ControlClient) GetTenantsForAccount(ctx context.Context, accountID stri
 }
 
 // GetDatasetsForTenant returns all datasets for a tenant
-func (c *ControlClient) GetDatasetsForTenant(ctx context.Context, tenantID string) ([]ControlDataset, error) {
+func (c *ControlClient) GetDatasetsForTenant(ctx context.Context, tenantID string, authToken string) ([]ControlDataset, error) {
 	if c == nil {
 		return nil, fmt.Errorf("control client not configured (standalone mode)")
 	}
@@ -107,6 +112,11 @@ func (c *ControlClient) GetDatasetsForTenant(ctx context.Context, tenantID strin
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Forward auth token if provided
+	if authToken != "" {
+		req.Header.Set("Authorization", authToken)
 	}
 
 	resp, err := c.httpClient.Do(req)

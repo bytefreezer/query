@@ -70,7 +70,7 @@ func (s *DatasetService) IsSharedMode() bool {
 // GetTenantIDs returns tenant IDs to scan based on mode
 // - Standalone mode: returns the single tenant_id from config
 // - Shared mode: queries control API for tenants belonging to account_id
-func (s *DatasetService) GetTenantIDs(ctx context.Context, accountID string) ([]string, error) {
+func (s *DatasetService) GetTenantIDs(ctx context.Context, accountID string, authToken string) ([]string, error) {
 	// Standalone mode - use tenant_id from config
 	if !s.IsSharedMode() {
 		if s.config.S3.TenantID == "" {
@@ -84,7 +84,7 @@ func (s *DatasetService) GetTenantIDs(ctx context.Context, accountID string) ([]
 		return nil, fmt.Errorf("account_id required for shared mode")
 	}
 
-	tenants, err := s.controlClient.GetTenantsForAccount(ctx, accountID)
+	tenants, err := s.controlClient.GetTenantsForAccount(ctx, accountID, authToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tenants for account %s: %w", accountID, err)
 	}
@@ -110,9 +110,9 @@ func (s *DatasetService) GetTenantIDs(ctx context.Context, accountID string) ([]
 // ListDatasets returns all datasets available for the given account
 // In standalone mode, accountID is ignored and config tenant_id is used
 // In shared mode, accountID is used to lookup tenants via control API
-func (s *DatasetService) ListDatasets(ctx context.Context, accountID string) ([]Dataset, error) {
+func (s *DatasetService) ListDatasets(ctx context.Context, accountID string, authToken string) ([]Dataset, error) {
 	// Get tenant IDs based on mode
-	tenantIDs, err := s.GetTenantIDs(ctx, accountID)
+	tenantIDs, err := s.GetTenantIDs(ctx, accountID, authToken)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func (s *DatasetService) ListDatasets(ctx context.Context, accountID string) ([]
 	datasetNames := make(map[string]string) // datasetID -> name
 	if s.IsSharedMode() {
 		for _, tenantID := range tenantIDs {
-			datasets, err := s.controlClient.GetDatasetsForTenant(ctx, tenantID)
+			datasets, err := s.controlClient.GetDatasetsForTenant(ctx, tenantID, authToken)
 			if err != nil {
 				log.Warnf("Failed to get datasets for tenant %s from control: %v", tenantID, err)
 				continue
