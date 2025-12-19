@@ -22,13 +22,15 @@ import (
 
 // Dataset represents a dataset available for querying
 type Dataset struct {
-	ID          string `json:"id"`
-	TenantID    string `json:"tenant_id"`
-	Name        string `json:"name"`
-	Path        string `json:"path"`
-	ParquetGlob string `json:"parquet_glob"`
-	SizeBytes   int64  `json:"size_bytes"`
-	FileCount   int    `json:"file_count"`
+	ID           string `json:"id"`
+	TenantID     string `json:"tenant_id"`
+	Name         string `json:"name"`
+	Path         string `json:"path"`
+	ParquetGlob  string `json:"parquet_glob"`
+	SizeBytes    int64  `json:"size_bytes"`
+	FileCount    int    `json:"file_count"`
+	ReadAllowed  bool   `json:"read_allowed"`   // True if S3 credentials allow read access
+	ReadError    string `json:"read_error,omitempty"` // Error message if read is not allowed
 }
 
 // DatasetService handles dataset discovery and management
@@ -67,6 +69,81 @@ func NewDatasetService(cfg *config.Config) (*DatasetService, error) {
 // IsSharedMode returns true if running in shared mode (with control API)
 func (s *DatasetService) IsSharedMode() bool {
 	return s.controlClient != nil
+}
+
+// CreateS3ClientForDataset creates an S3 client using dataset-specific credentials
+func (s *DatasetService) CreateS3ClientForDataset(ctx context.Context, tenantID, datasetID, authToken string) (*minio.Client, string, error) {
+	// In standalone mode, use the configured credentials
+	if !s.IsSharedMode() {
+		return s.minioClient, s.config.S3.Bucket, nil
+	}
+
+	// Get credentials from control API
+	creds, err := s.controlClient.GetDatasetS3Credentials(ctx, tenantID, datasetID, authToken)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get S3 credentials: %w", err)
+	}
+
+	// Parse endpoint - remove http:// or https:// prefix if present
+	endpoint := creds.Endpoint
+	endpoint = strings.TrimPrefix(endpoint, "http://")
+	endpoint = strings.TrimPrefix(endpoint, "https://")
+
+	// Create MinIO client with dataset-specific credentials
+	client, err := minio.New(endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(creds.AccessKey, creds.SecretKey, ""),
+		Secure: creds.UseSSL,
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create S3 client: %w", err)
+	}
+
+	return client, creds.Bucket, nil
+}
+
+// TestReadAccess tests if the S3 credentials allow reading from the dataset
+// Returns (allowed, errorMessage)
+func (s *DatasetService) TestReadAccess(ctx context.Context, tenantID, datasetID, authToken string) (bool, string) {
+	client, bucket, err := s.CreateS3ClientForDataset(ctx, tenantID, datasetID, authToken)
+	if err != nil {
+		return false, fmt.Sprintf("Failed to get S3 credentials: %s. Configure read-enabled credentials in dataset settings.", err.Error())
+	}
+
+	// Try to list objects in the dataset path
+	prefix := fmt.Sprintf("%s/%s/data/parquet/", tenantID, datasetID)
+
+	objectCh := client.ListObjects(ctx, bucket, minio.ListObjectsOptions{
+		Prefix:    prefix,
+		MaxKeys:   1,
+		Recursive: false,
+	})
+
+	// Check if we can read at least one object
+	for object := range objectCh {
+		if object.Err != nil {
+			errMsg := object.Err.Error()
+			if strings.Contains(errMsg, "Access Denied") || strings.Contains(errMsg, "AccessDenied") {
+				return false, "S3 credentials do not have read access. Update your dataset S3 credentials to include read permissions (s3:GetObject, s3:ListBucket)."
+			}
+			return false, fmt.Sprintf("S3 read test failed: %s", errMsg)
+		}
+		// Successfully listed at least one object
+		return true, ""
+	}
+
+	// No objects found, but no error either - could be empty or no read access
+	// Try to do a HEAD request on the bucket to verify access
+	_, err = client.BucketExists(ctx, bucket)
+	if err != nil {
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "Access Denied") || strings.Contains(errMsg, "AccessDenied") {
+			return false, "S3 credentials do not have read access. Update your dataset S3 credentials to include read permissions (s3:GetObject, s3:ListBucket)."
+		}
+		return false, fmt.Sprintf("S3 access test failed: %s", errMsg)
+	}
+
+	// Bucket accessible but no parquet files yet
+	return true, ""
 }
 
 // GetTenantIDs returns tenant IDs to scan based on mode
@@ -119,22 +196,68 @@ func (s *DatasetService) ListDatasets(ctx context.Context, accountID string, aut
 		return nil, err
 	}
 
-	bucket := s.config.S3.Bucket
-
-	// Build a map of dataset names from control API (shared mode only)
-	datasetNames := make(map[string]string) // datasetID -> name
+	// In shared mode, get datasets from control API and check read access per dataset
 	if s.IsSharedMode() {
-		for _, tenantID := range tenantIDs {
-			datasets, err := s.controlClient.GetDatasetsForTenant(ctx, tenantID, authToken)
-			if err != nil {
-				log.Warnf("Failed to get datasets for tenant %s from control: %v", tenantID, err)
-				continue
+		return s.listDatasetsSharedMode(ctx, tenantIDs, authToken)
+	}
+
+	// Standalone mode - use configured credentials
+	return s.listDatasetsStandaloneMode(ctx, tenantIDs)
+}
+
+// listDatasetsSharedMode lists datasets using per-dataset S3 credentials from control API
+func (s *DatasetService) listDatasetsSharedMode(ctx context.Context, tenantIDs []string, authToken string) ([]Dataset, error) {
+	var datasets []Dataset
+
+	for _, tenantID := range tenantIDs {
+		// Get datasets for this tenant from control API
+		controlDatasets, err := s.controlClient.GetDatasetsForTenant(ctx, tenantID, authToken)
+		if err != nil {
+			log.Warnf("Failed to get datasets for tenant %s from control: %v", tenantID, err)
+			continue
+		}
+
+		for _, cd := range controlDatasets {
+			// Test read access for this dataset
+			readAllowed, readError := s.TestReadAccess(ctx, tenantID, cd.ID, authToken)
+
+			basePath := fmt.Sprintf("%s/%s/data/parquet", tenantID, cd.ID)
+
+			var sizeBytes int64
+			var fileCount int
+
+			// Only scan for files if we have read access
+			if readAllowed {
+				client, bucket, err := s.CreateS3ClientForDataset(ctx, tenantID, cd.ID, authToken)
+				if err == nil {
+					sizeBytes, fileCount = s.getDatasetSizeWithClient(ctx, client, bucket, basePath)
+				}
 			}
-			for _, d := range datasets {
-				datasetNames[d.ID] = d.Name
-			}
+
+			// Build parquet glob - use dataset-specific bucket info if available
+			parquetGlob := s.buildS3PathForDataset(ctx, tenantID, cd.ID, authToken, basePath+"/**/*.parquet")
+
+			datasets = append(datasets, Dataset{
+				ID:          cd.ID,
+				TenantID:    tenantID,
+				Name:        cd.Name,
+				Path:        basePath,
+				ParquetGlob: parquetGlob,
+				SizeBytes:   sizeBytes,
+				FileCount:   fileCount,
+				ReadAllowed: readAllowed,
+				ReadError:   readError,
+			})
 		}
 	}
+
+	log.Infof("Found %d datasets across %d tenants (shared mode)", len(datasets), len(tenantIDs))
+	return datasets, nil
+}
+
+// listDatasetsStandaloneMode lists datasets using configured S3 credentials
+func (s *DatasetService) listDatasetsStandaloneMode(ctx context.Context, tenantIDs []string) ([]Dataset, error) {
+	bucket := s.config.S3.Bucket
 
 	// Use a map to deduplicate datasets (key: tenantID/datasetID)
 	type datasetKey struct {
@@ -184,33 +307,34 @@ func (s *DatasetService) ListDatasets(ctx context.Context, accountID string, aut
 		// Calculate dataset size
 		sizeBytes, fileCount := s.getDatasetSize(ctx, bucket, basePath)
 
-		// Get display name from control API or fall back to ID
-		name := key.datasetID
-		if controlName, ok := datasetNames[key.datasetID]; ok && controlName != "" {
-			name = controlName
-		}
-
 		datasets = append(datasets, Dataset{
 			ID:          key.datasetID,
 			TenantID:    key.tenantID,
-			Name:        name,
+			Name:        key.datasetID, // In standalone mode, use ID as name
 			Path:        basePath,
 			ParquetGlob: parquetGlob,
 			SizeBytes:   sizeBytes,
 			FileCount:   fileCount,
+			ReadAllowed: true, // Standalone mode uses configured credentials, assumed to have access
+			ReadError:   "",
 		})
 	}
 
-	log.Infof("Found %d datasets across %d tenants", len(datasets), len(tenantIDs))
+	log.Infof("Found %d datasets across %d tenants (standalone mode)", len(datasets), len(tenantIDs))
 	return datasets, nil
 }
 
-// getDatasetSize calculates the total size and file count for a dataset
+// getDatasetSize calculates the total size and file count for a dataset using configured S3 client
 func (s *DatasetService) getDatasetSize(ctx context.Context, bucket, basePath string) (int64, int) {
+	return s.getDatasetSizeWithClient(ctx, s.minioClient, bucket, basePath)
+}
+
+// getDatasetSizeWithClient calculates the total size and file count for a dataset using a specific S3 client
+func (s *DatasetService) getDatasetSizeWithClient(ctx context.Context, client *minio.Client, bucket, basePath string) (int64, int) {
 	var totalSize int64
 	var fileCount int
 
-	objectCh := s.minioClient.ListObjects(ctx, bucket, minio.ListObjectsOptions{
+	objectCh := client.ListObjects(ctx, bucket, minio.ListObjectsOptions{
 		Prefix:    basePath + "/",
 		Recursive: true,
 	})
@@ -228,6 +352,23 @@ func (s *DatasetService) getDatasetSize(ctx context.Context, bucket, basePath st
 	}
 
 	return totalSize, fileCount
+}
+
+// buildS3PathForDataset builds an S3 path for DuckDB using dataset-specific credentials
+func (s *DatasetService) buildS3PathForDataset(ctx context.Context, tenantID, datasetID, authToken string, path string) string {
+	// In standalone mode or if we can't get credentials, fall back to default
+	if !s.IsSharedMode() {
+		return s.buildS3Path(path)
+	}
+
+	creds, err := s.controlClient.GetDatasetS3Credentials(ctx, tenantID, datasetID, authToken)
+	if err != nil {
+		log.Warnf("Failed to get S3 credentials for parquet glob, using default: %v", err)
+		return s.buildS3Path(path)
+	}
+
+	// Build S3 URL for DuckDB: s3://bucket/path
+	return fmt.Sprintf("s3://%s/%s", creds.Bucket, path)
 }
 
 // GetDataset returns a specific dataset by ID
