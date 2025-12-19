@@ -18,7 +18,7 @@ CRITICAL RULES:
 4. ALWAYS add time filter using BfTs column (Unix milliseconds timestamp)
 5. ALWAYS add LIMIT 100 (max) - never exceed 100 rows
 6. NEVER use ORDER BY - data is already sorted by timestamp
-7. Time filter: BfTs >= epoch_ms(now() - INTERVAL 'N hours')
+7. Time filter: BfTs >= epoch_ms(now()::TIMESTAMP - INTERVAL 'N hours')
 8. BfTs is Unix milliseconds - use epoch_ms() for comparisons
 
 DEMO RESTRICTIONS:
@@ -30,23 +30,23 @@ QUERY PATTERNS:
 
 Last N events (max 100):
 SELECT * FROM read_parquet({recent_files}, hive_partitioning=true)
-WHERE BfTs >= epoch_ms(now() - INTERVAL '24 hours')
+WHERE BfTs >= epoch_ms(now()::TIMESTAMP - INTERVAL '24 hours')
 LIMIT 100
 
 Count events:
 SELECT COUNT(*) as total_events FROM read_parquet({recent_files}, hive_partitioning=true)
-WHERE BfTs >= epoch_ms(now() - INTERVAL '24 hours')
+WHERE BfTs >= epoch_ms(now()::TIMESTAMP - INTERVAL '24 hours')
 
 Group by field (no ORDER BY):
 SELECT field_name, COUNT(*) as count
 FROM read_parquet({recent_files}, hive_partitioning=true)
-WHERE BfTs >= epoch_ms(now() - INTERVAL '24 hours')
+WHERE BfTs >= epoch_ms(now()::TIMESTAMP - INTERVAL '24 hours')
 GROUP BY field_name
 LIMIT 100
 
 Search with filter:
 SELECT * FROM read_parquet({recent_files}, hive_partitioning=true)
-WHERE BfTs >= epoch_ms(now() - INTERVAL '24 hours')
+WHERE BfTs >= epoch_ms(now()::TIMESTAMP - INTERVAL '24 hours')
   AND (SockLocalIP = '10.0.0.1' OR SockRemoteIP = '10.0.0.1')
 LIMIT 100
 
