@@ -64,6 +64,12 @@ func isPublicEndpoint(path string) bool {
 func AccountIDMiddleware(fallbackAccountID string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip account_id requirement for OPTIONS (CORS preflight)
+			if r.Method == "OPTIONS" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			// Skip account_id requirement for public endpoints
 			if isPublicEndpoint(r.URL.Path) {
 				next.ServeHTTP(w, r)
