@@ -33,7 +33,7 @@ s3:
 
 # Control API configuration (for shared mode)
 # When set, query service will resolve account_id → tenant_ids via control API
-{% if config.control.url | default('') %}
+{% if config.control is defined and config.control.url | default('') %}
 control:
   url: "{{ config.control.url }}"
 {% endif %}

@@ -64,11 +64,21 @@ config:
     url_style: "path"
     use_iam_role: false
 
+  # Control API configuration (for shared mode)
+  control:
+    url: "http://localhost:8082"
+
   # LLM configuration
   llm:
     provider: "anthropic"  # anthropic, openai, or ollama
     model: "claude-sonnet-4-20250514"
     ollama_host: "http://localhost:11434"
+
+  # Query limits
+  limits:
+    max_time_range_hours: 24
+    max_row_limit: 100
+    allow_order_by: false
 
 # Download configuration for install.yml
 download:
