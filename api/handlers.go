@@ -4,7 +4,9 @@
 package api
 
 import (
+	"context"
 	"net/http"
+	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/bytefreezer/goodies/log"
@@ -19,16 +21,18 @@ type Handlers struct {
 	schemaExtractor *services.SchemaExtractor
 	sqlGenerator    *services.SQLGenerator
 	datasetService  *services.DatasetService
+	controlClient   *services.ControlClient
 }
 
 // NewHandlers creates a new handlers instance
-func NewHandlers(cfg *config.Config, duckdb *services.DuckDBClient, schema *services.SchemaExtractor, sqlGen *services.SQLGenerator, datasetSvc *services.DatasetService) *Handlers {
+func NewHandlers(cfg *config.Config, duckdb *services.DuckDBClient, schema *services.SchemaExtractor, sqlGen *services.SQLGenerator, datasetSvc *services.DatasetService, controlClient *services.ControlClient) *Handlers {
 	return &Handlers{
 		config:          cfg,
 		duckdbClient:    duckdb,
 		schemaExtractor: schema,
 		sqlGenerator:    sqlGen,
 		datasetService:  datasetSvc,
+		controlClient:   controlClient,
 	}
 }
 
@@ -133,6 +137,16 @@ func (h *Handlers) HandleGenerateQuery(w http.ResponseWriter, r *http.Request) {
 	sql, err := h.sqlGenerator.GenerateSQL(r.Context(), req.TenantID, req.DatasetID, req.Question)
 	if err != nil {
 		log.Warnf("SQL generation failed: %v", err)
+		// Report error to control for debugging
+		h.reportQueryError(r.Context(), &services.QueryErrorReport{
+			TenantID:     req.TenantID,
+			DatasetID:    req.DatasetID,
+			Question:     req.Question,
+			ErrorMessage: err.Error(),
+			ErrorType:    "generation_error",
+			LLMProvider:  h.config.LLM.Provider,
+			LLMModel:     h.config.LLM.Model,
+		})
 		writeJSON(w, http.StatusOK, QueryResponse{Error: "Failed to generate SQL: " + err.Error()})
 		return
 	}
@@ -187,6 +201,16 @@ func (h *Handlers) HandleNaturalQuery(w http.ResponseWriter, r *http.Request) {
 	sql, err := h.sqlGenerator.GenerateSQL(r.Context(), req.TenantID, req.DatasetID, req.Question)
 	if err != nil {
 		log.Warnf("SQL generation failed: %v", err)
+		// Report generation error to control
+		h.reportQueryError(r.Context(), &services.QueryErrorReport{
+			TenantID:     req.TenantID,
+			DatasetID:    req.DatasetID,
+			Question:     req.Question,
+			ErrorMessage: err.Error(),
+			ErrorType:    "generation_error",
+			LLMProvider:  h.config.LLM.Provider,
+			LLMModel:     h.config.LLM.Model,
+		})
 		writeJSON(w, http.StatusOK, QueryResponse{Error: "Failed to generate SQL: " + err.Error()})
 		return
 	}
@@ -195,6 +219,20 @@ func (h *Handlers) HandleNaturalQuery(w http.ResponseWriter, r *http.Request) {
 
 	// Execute the query
 	result := h.duckdbClient.ExecuteQuery(r.Context(), sql, 30)
+
+	// Report execution error if any
+	if result.Error != "" {
+		h.reportQueryError(r.Context(), &services.QueryErrorReport{
+			TenantID:     req.TenantID,
+			DatasetID:    req.DatasetID,
+			Question:     req.Question,
+			GeneratedSQL: sql,
+			ErrorMessage: result.Error,
+			ErrorType:    "execution_error",
+			LLMProvider:  h.config.LLM.Provider,
+			LLMModel:     h.config.LLM.Model,
+		})
+	}
 
 	response := QueryResponse{
 		SQL:             sql,
@@ -345,4 +383,20 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	if err := sonic.ConfigDefault.NewEncoder(w).Encode(data); err != nil {
 		log.Errorf("Failed to encode response: %v", err)
 	}
+}
+
+// reportQueryError reports a query error to the control API for debugging
+func (h *Handlers) reportQueryError(_ context.Context, report *services.QueryErrorReport) {
+	if h.controlClient == nil {
+		log.Debug("Skipping query error report (no control client)")
+		return
+	}
+	// Report asynchronously with a fresh context to avoid cancellation when request finishes
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := h.controlClient.ReportQueryError(bgCtx, report); err != nil {
+			log.Warnf("Failed to report query error: %v", err)
+		}
+	}()
 }

@@ -92,8 +92,11 @@ func main() {
 		log.Fatalf("Failed to initialize SQL generator: %v", err)
 	}
 
+	// Initialize control client for error reporting
+	controlClient := services.NewControlClient(&cfg)
+
 	// Initialize handlers
-	handlers := api.NewHandlers(&cfg, duckdbClient, schemaExtractor, sqlGenerator, datasetService)
+	handlers := api.NewHandlers(&cfg, duckdbClient, schemaExtractor, sqlGenerator, datasetService, controlClient)
 
 	// Setup routes
 	mux := http.NewServeMux()

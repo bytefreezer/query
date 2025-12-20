@@ -4,6 +4,7 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -187,4 +188,58 @@ func (c *ControlClient) GetDatasetS3Credentials(ctx context.Context, tenantID, d
 
 	log.Debugf("Got S3 credentials for dataset %s/%s: bucket=%s, endpoint=%s", tenantID, datasetID, result.Bucket, result.Endpoint)
 	return &result, nil
+}
+
+// QueryErrorReport represents a failed query to report to control
+type QueryErrorReport struct {
+	AccountID     string `json:"account_id,omitempty"`
+	TenantID      string `json:"tenant_id,omitempty"`
+	DatasetID     string `json:"dataset_id,omitempty"`
+	Question      string `json:"question"`
+	GeneratedSQL  string `json:"generated_sql,omitempty"`
+	ErrorMessage  string `json:"error_message"`
+	ErrorType     string `json:"error_type"` // generation_error, execution_error, validation_error
+	SchemaColumns int    `json:"schema_columns,omitempty"`
+	LLMProvider   string `json:"llm_provider,omitempty"`
+	LLMModel      string `json:"llm_model,omitempty"`
+}
+
+// ReportQueryError sends a query error to the control API for debugging
+func (c *ControlClient) ReportQueryError(ctx context.Context, report *QueryErrorReport) error {
+	if c == nil {
+		log.Debug("Skipping query error report (standalone mode)")
+		return nil
+	}
+
+	url := fmt.Sprintf("%s/api/v1/query-errors", c.baseURL)
+
+	body, err := json.Marshal(report)
+	if err != nil {
+		return fmt.Errorf("failed to marshal error report: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		log.Warnf("Failed to report query error to control: %v", err)
+		return nil // Don't fail the user's request if error reporting fails
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		log.Warnf("Control API returned status %d for query error report", resp.StatusCode)
+	} else {
+		log.Debugf("Reported query error to control: type=%s", report.ErrorType)
+	}
+
+	return nil
 }
