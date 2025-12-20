@@ -16,8 +16,6 @@ type contextKey string
 const (
 	// AccountIDContextKey is the key for storing account_id in context
 	AccountIDContextKey = contextKey("account_id")
-	// AuthTokenContextKey is the key for storing auth token in context
-	AuthTokenContextKey = contextKey("auth_token")
 )
 
 // GetAccountIDFromContext extracts account_id from request context
@@ -28,16 +26,6 @@ func GetAccountIDFromContext(ctx context.Context) string {
 		return ""
 	}
 	return accountID
-}
-
-// GetAuthTokenFromContext extracts auth token from request context
-// Returns empty string if not found
-func GetAuthTokenFromContext(ctx context.Context) string {
-	authToken, ok := ctx.Value(AuthTokenContextKey).(string)
-	if !ok {
-		return ""
-	}
-	return authToken
 }
 
 // isPublicEndpoint checks if the path should bypass account_id requirement
@@ -95,13 +83,6 @@ func AccountIDMiddleware(fallbackAccountID string) func(http.Handler) http.Handl
 
 			// Add account_id to context
 			ctx := context.WithValue(r.Context(), AccountIDContextKey, accountID)
-
-			// Also store the auth token for forwarding to control API
-			authToken := r.Header.Get("Authorization")
-			if authToken != "" {
-				ctx = context.WithValue(ctx, AuthTokenContextKey, authToken)
-			}
-
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

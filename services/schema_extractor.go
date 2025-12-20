@@ -98,7 +98,7 @@ func (s *SchemaExtractor) refreshSchema(ctx context.Context, tenantID, datasetID
 	partitions := detectPartitions(columns)
 
 	// Build sample path for reference
-	metadataPath := s.datasetService.GetMetadataPath(tenantID, datasetID)
+	metadataPath := s.datasetService.GetMetadataPath(ctx, tenantID, datasetID)
 
 	// Update cache
 	s.cache[cacheKey] = &SchemaCache{

@@ -15,28 +15,11 @@ logging:
 server:
   port: {{ config.server.port }}
 
-# S3/MinIO configuration for Parquet data access
-s3:
-  region: "{{ config.s3.region }}"
-  access_key: "{{ config.s3.access_key }}"
-  secret_key: "{{ config.s3.secret_key }}"
-  bucket: "{{ config.s3.bucket }}"
-{% if config.s3.tenant_id | default('') %}
-  tenant_id: "{{ config.s3.tenant_id }}"
-{% endif %}
-{% if config.s3.endpoint %}
-  endpoint: "{{ config.s3.endpoint }}"
-{% endif %}
-  ssl: {{ config.s3.ssl | lower }}
-  url_style: "{{ config.s3.url_style }}"
-  use_iam_role: {{ config.s3.use_iam_role | lower }}
-
-# Control API configuration (for shared mode)
-# When set, query service will resolve account_id → tenant_ids via control API
-{% if config.control is defined and config.control.url | default('') %}
+# Control API configuration
+# Query service gets datasets and S3 credentials from control API
 control:
   url: "{{ config.control.url }}"
-{% endif %}
+  api_key: "{{ bytefreezer_api_key }}"
 
 # LLM configuration
 llm:

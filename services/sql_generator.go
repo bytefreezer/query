@@ -58,7 +58,7 @@ func (g *SQLGenerator) GenerateSQL(ctx context.Context, tenantID, datasetID, que
 	}
 
 	// Get the parquet path for this dataset
-	parquetPath := g.datasetService.GetParquetGlob(tenantID, datasetID)
+	parquetPath := g.datasetService.GetParquetGlob(ctx, tenantID, datasetID)
 
 	// Get recent files for fast queries
 	recentFiles, err := g.datasetService.GetRecentFiles(ctx, tenantID, datasetID, 5)

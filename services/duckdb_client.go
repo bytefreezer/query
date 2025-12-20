@@ -22,6 +22,16 @@ type DuckDBClient struct {
 	mu     sync.Mutex
 }
 
+// S3Credentials holds S3 credentials for a dataset
+type S3Credentials struct {
+	Bucket    string
+	Region    string
+	Endpoint  string
+	AccessKey string
+	SecretKey string
+	UseSSL    bool
+}
+
 // QueryResult holds the result of a query execution
 type QueryResult struct {
 	Columns         []string        `json:"columns"`
@@ -60,34 +70,14 @@ func NewDuckDBClient(cfg *config.Config) (*DuckDBClient, error) {
 	return client, nil
 }
 
-// initS3 configures DuckDB for S3 access
+// initS3 loads the httpfs extension for S3 access
+// Credentials are configured per-query via ConfigureS3Credentials
 func (c *DuckDBClient) initS3() error {
-	// Install and load httpfs extension
+	// Install and load httpfs extension only
+	// S3 credentials are set per-query from dataset configuration
 	statements := []string{
 		"INSTALL httpfs",
 		"LOAD httpfs",
-	}
-
-	// Add S3 configuration
-	if c.config.S3.Region != "" {
-		statements = append(statements, fmt.Sprintf("SET s3_region = '%s'", c.config.S3.Region))
-	}
-	if c.config.S3.AccessKey != "" {
-		statements = append(statements, fmt.Sprintf("SET s3_access_key_id = '%s'", c.config.S3.AccessKey))
-	}
-	if c.config.S3.SecretKey != "" {
-		statements = append(statements, fmt.Sprintf("SET s3_secret_access_key = '%s'", c.config.S3.SecretKey))
-	}
-
-	// MinIO-specific settings
-	if c.config.S3.Endpoint != "" {
-		statements = append(statements, fmt.Sprintf("SET s3_endpoint = '%s'", c.config.S3.Endpoint))
-		if !c.config.S3.SSL {
-			statements = append(statements, "SET s3_use_ssl = false")
-		}
-		if c.config.S3.URLStyle == "path" {
-			statements = append(statements, "SET s3_url_style = 'path'")
-		}
 	}
 
 	for _, stmt := range statements {
@@ -96,6 +86,50 @@ func (c *DuckDBClient) initS3() error {
 		}
 	}
 
+	return nil
+}
+
+// ConfigureS3Credentials sets S3 credentials for the current session
+// This must be called before executing queries that access S3
+func (c *DuckDBClient) ConfigureS3Credentials(creds *S3Credentials) error {
+	if creds == nil {
+		return fmt.Errorf("credentials cannot be nil")
+	}
+
+	var statements []string
+
+	// Set region (default to us-east-1 if not specified)
+	region := creds.Region
+	if region == "" {
+		region = "us-east-1"
+	}
+	statements = append(statements, fmt.Sprintf("SET s3_region = '%s'", region))
+
+	// Set credentials
+	if creds.AccessKey != "" {
+		statements = append(statements, fmt.Sprintf("SET s3_access_key_id = '%s'", creds.AccessKey))
+	}
+	if creds.SecretKey != "" {
+		statements = append(statements, fmt.Sprintf("SET s3_secret_access_key = '%s'", creds.SecretKey))
+	}
+
+	// MinIO-specific settings
+	if creds.Endpoint != "" {
+		statements = append(statements, fmt.Sprintf("SET s3_endpoint = '%s'", creds.Endpoint))
+		if !creds.UseSSL {
+			statements = append(statements, "SET s3_use_ssl = false")
+		}
+		// Always use path style for MinIO
+		statements = append(statements, "SET s3_url_style = 'path'")
+	}
+
+	for _, stmt := range statements {
+		if _, err := c.db.Exec(stmt); err != nil {
+			return fmt.Errorf("failed to configure S3: %w", err)
+		}
+	}
+
+	log.Debugf("Configured DuckDB S3: bucket=%s, endpoint=%s, region=%s", creds.Bucket, creds.Endpoint, region)
 	return nil
 }
 

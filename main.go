@@ -67,14 +67,8 @@ func main() {
 
 	setLogLevel(cfg.Logging.Level)
 
-	// Log mode info
-	var modeInfo string
-	if cfg.Control.URL != "" {
-		modeInfo = fmt.Sprintf("shared mode (control: %s)", cfg.Control.URL)
-	} else {
-		modeInfo = fmt.Sprintf("standalone mode (tenant: %s)", cfg.S3.TenantID)
-	}
-	log.Infof("Configuration loaded: S3 bucket=%s, %s, LLM provider=%s", cfg.S3.Bucket, modeInfo, cfg.LLM.Provider)
+	// Log configuration
+	log.Infof("Configuration loaded: control=%s, LLM provider=%s", cfg.Control.URL, cfg.LLM.Provider)
 
 	// Initialize DuckDB client
 	duckdbClient, err := services.NewDuckDBClient(&cfg)

@@ -22,7 +22,6 @@ type Config struct {
 	App     AppConfig     `mapstructure:"app"`
 	Logging LoggingConfig `mapstructure:"logging"`
 	Server  ServerConfig  `mapstructure:"server"`
-	S3      S3Config      `mapstructure:"s3"`
 	LLM     LLMConfig     `mapstructure:"llm"`
 	Limits  LimitsConfig  `mapstructure:"limits"`
 	Control ControlConfig `mapstructure:"control"`
@@ -30,7 +29,8 @@ type Config struct {
 
 // ControlConfig holds control API connection settings (for shared mode)
 type ControlConfig struct {
-	URL string `mapstructure:"url"` // Control API URL, e.g. "http://localhost:8082" (empty = standalone mode)
+	URL    string `mapstructure:"url"`     // Control API URL, e.g. "http://localhost:8082" (empty = standalone mode)
+	APIKey string `mapstructure:"api_key"` // Service API key for control API authentication (service-to-service)
 }
 
 // LimitsConfig holds query limits for demo/production
@@ -55,19 +55,6 @@ type LoggingConfig struct {
 // ServerConfig holds HTTP server settings
 type ServerConfig struct {
 	Port int `mapstructure:"port"`
-}
-
-// S3Config holds S3/MinIO connection settings
-type S3Config struct {
-	Region     string `mapstructure:"region"`
-	AccessKey  string `mapstructure:"access_key"`
-	SecretKey  string `mapstructure:"secret_key"`
-	Endpoint   string `mapstructure:"endpoint"`
-	Bucket     string `mapstructure:"bucket"`
-	TenantID   string `mapstructure:"tenant_id"` // Tenant ID for standalone mode (S3 paths use tenant_id)
-	SSL        bool   `mapstructure:"ssl"`
-	URLStyle   string `mapstructure:"url_style"` // "path" or "vhost"
-	UseIAMRole bool   `mapstructure:"use_iam_role"`
 }
 
 // LLMConfig holds LLM provider settings
@@ -125,12 +112,6 @@ func LoadConfig(cfgFile, envPrefix string, cfg *Config) error {
 	if cfg.Server.Port == 0 {
 		cfg.Server.Port = 8000
 	}
-	if cfg.S3.Region == "" {
-		cfg.S3.Region = "us-east-1"
-	}
-	if cfg.S3.URLStyle == "" {
-		cfg.S3.URLStyle = "path"
-	}
 	if cfg.LLM.Provider == "" {
 		cfg.LLM.Provider = "anthropic"
 	}
@@ -161,16 +142,11 @@ func LoadConfig(cfgFile, envPrefix string, cfg *Config) error {
 
 // Validate checks that required configuration is present
 func (cfg *Config) Validate() error {
-	if cfg.S3.Bucket == "" {
-		return pkgerrors.New("s3.bucket is required")
+	// Control URL is required - S3 credentials come from control API per dataset
+	if cfg.Control.URL == "" {
+		return pkgerrors.New("control.url is required - query service gets S3 credentials from control API per dataset")
 	}
-	// Modes:
-	// - Standalone mode: s3.tenant_id is set (single tenant)
-	// - Shared mode: control.url is set (resolves account_id → tenant_ids via control API)
-	// At least one must be configured
-	if cfg.S3.TenantID == "" && cfg.Control.URL == "" {
-		return pkgerrors.New("either s3.tenant_id (standalone) or control.url (shared mode) is required")
-	}
+
 	if cfg.LLM.APIKey == "" && cfg.LLM.Provider != "ollama" {
 		return pkgerrors.Errorf("llm.api_key is required for provider %s", cfg.LLM.Provider)
 	}

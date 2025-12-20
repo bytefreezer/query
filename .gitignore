@@ -3,7 +3,6 @@ bytefreezer-query
 *.exe
 
 # Config files with secrets
-config-local.yaml
 config.yaml
 .env
 

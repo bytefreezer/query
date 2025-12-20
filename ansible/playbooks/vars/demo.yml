@@ -7,9 +7,8 @@ github_repo: "bytefreezer/query"
 version: "{{ bytefreezer_query_version | default('latest') }}"
 
 # AWX Survey Variables (secrets only - NOT stored in git)
-# claude_api_key: ""    # AWX survey variable for Claude AI
-# s3_access_key: ""     # AWX survey variable for MinIO access key
-# s3_secret_key: ""     # AWX survey variable for MinIO secret key
+# claude_api_key: ""         # AWX survey variable for Claude AI
+# bytefreezer_api_key: ""    # AWX survey variable for control API service key
 
 # Configuration options (edit here, not in AWX)
 enable_debug_logging: false
@@ -50,22 +49,10 @@ config:
   server:
     port: 8000
 
-  # S3/MinIO configuration for Parquet data access
-  s3:
-    region: "us-east-1"
-    access_key: "{{ s3_access_key | default('AKIAQNXBAHUKIMJP26P6') }}"
-    secret_key: "{{ s3_secret_key | default('') }}"
-    bucket: "output"
-    # tenant_id: "" - for standalone mode, or use control.url for shared mode
-    endpoint: "localhost:9000"
-    ssl: false
-    url_style: "path"
-    use_iam_role: false
-
-  # Control API configuration (for shared mode)
-  # When set, query service will use control API to resolve account_id → tenant_ids
+  # Control API configuration
+  # Query service gets datasets and S3 credentials from control API
   control:
-    url: "http://localhost:8082"  # Control API URL (empty for standalone mode)
+    url: "{{ bytefreezer_control_url }}"
 
   # LLM configuration
   llm:

@@ -41,7 +41,9 @@ type NaturalQueryRequest struct {
 
 // SQLQueryRequest is the request body for SQL queries
 type SQLQueryRequest struct {
-	SQL string `json:"sql"`
+	TenantID  string `json:"tenant_id"`  // Required to get S3 credentials
+	DatasetID string `json:"dataset_id"` // Required to get S3 credentials
+	SQL       string `json:"sql"`
 }
 
 // QueryResponse is the response for query endpoints
@@ -86,10 +88,7 @@ func (h *Handlers) HandleListDatasets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get auth token to forward to control API
-	authToken := GetAuthTokenFromContext(r.Context())
-
-	datasets, err := h.datasetService.ListDatasets(r.Context(), accountID, authToken)
+	datasets, err := h.datasetService.ListDatasets(r.Context(), accountID)
 	if err != nil {
 		log.Warnf("Failed to list datasets: %v", err)
 		writeJSON(w, http.StatusInternalServerError, DatasetsResponse{
@@ -169,6 +168,21 @@ func (h *Handlers) HandleNaturalQuery(w http.ResponseWriter, r *http.Request) {
 
 	log.Infof("Natural query on tenant %s dataset %s: %s", req.TenantID, req.DatasetID, req.Question)
 
+	// Get S3 credentials for this dataset from control API
+	s3Creds, err := h.datasetService.GetS3CredentialsForDuckDB(r.Context(), req.TenantID, req.DatasetID)
+	if err != nil {
+		log.Warnf("Failed to get S3 credentials for dataset: %v", err)
+		writeJSON(w, http.StatusOK, QueryResponse{Error: "Failed to get dataset credentials: " + err.Error()})
+		return
+	}
+
+	// Configure DuckDB with dataset-specific S3 credentials
+	if err := h.duckdbClient.ConfigureS3Credentials(s3Creds); err != nil {
+		log.Warnf("Failed to configure S3 credentials: %v", err)
+		writeJSON(w, http.StatusOK, QueryResponse{Error: "Failed to configure S3 access: " + err.Error()})
+		return
+	}
+
 	// Generate SQL from natural language
 	sql, err := h.sqlGenerator.GenerateSQL(r.Context(), req.TenantID, req.DatasetID, req.Question)
 	if err != nil {
@@ -202,12 +216,37 @@ func (h *Handlers) HandleSQLQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.TenantID == "" {
+		writeJSON(w, http.StatusBadRequest, QueryResponse{Error: "tenant_id is required"})
+		return
+	}
+
+	if req.DatasetID == "" {
+		writeJSON(w, http.StatusBadRequest, QueryResponse{Error: "dataset_id is required"})
+		return
+	}
+
 	if req.SQL == "" {
 		writeJSON(w, http.StatusBadRequest, QueryResponse{Error: "sql is required"})
 		return
 	}
 
-	log.Infof("SQL query: %s", req.SQL)
+	log.Infof("SQL query on tenant %s dataset %s: %s", req.TenantID, req.DatasetID, req.SQL)
+
+	// Get S3 credentials for this dataset from control API
+	s3Creds, err := h.datasetService.GetS3CredentialsForDuckDB(r.Context(), req.TenantID, req.DatasetID)
+	if err != nil {
+		log.Warnf("Failed to get S3 credentials for dataset: %v", err)
+		writeJSON(w, http.StatusOK, QueryResponse{Error: "Failed to get dataset credentials: " + err.Error()})
+		return
+	}
+
+	// Configure DuckDB with dataset-specific S3 credentials
+	if err := h.duckdbClient.ConfigureS3Credentials(s3Creds); err != nil {
+		log.Warnf("Failed to configure S3 credentials: %v", err)
+		writeJSON(w, http.StatusOK, QueryResponse{Error: "Failed to configure S3 access: " + err.Error()})
+		return
+	}
 
 	// Execute the query
 	result := h.duckdbClient.ExecuteQuery(r.Context(), req.SQL, 30)
@@ -237,6 +276,22 @@ func (h *Handlers) HandleSchema(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get S3 credentials for this dataset from control API
+	// (needed in case schema extractor falls back to reading parquet files directly)
+	s3Creds, err := h.datasetService.GetS3CredentialsForDuckDB(r.Context(), tenantID, datasetID)
+	if err != nil {
+		log.Warnf("Failed to get S3 credentials for dataset: %v", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to get dataset credentials: " + err.Error()})
+		return
+	}
+
+	// Configure DuckDB with dataset-specific S3 credentials
+	if err := h.duckdbClient.ConfigureS3Credentials(s3Creds); err != nil {
+		log.Warnf("Failed to configure S3 credentials: %v", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to configure S3 access: " + err.Error()})
+		return
+	}
+
 	schema, err := h.schemaExtractor.GetSchema(r.Context(), tenantID, datasetID)
 	if err != nil {
 		log.Warnf("Schema extraction failed: %v", err)
@@ -256,32 +311,14 @@ func (h *Handlers) HandleHealth(w http.ResponseWriter, r *http.Request) {
 		duckdbStatus = "error: " + result.Error
 	}
 
-	// Determine mode and test S3
-	var mode, tenantID, controlURL string
-	s3Status := "accessible"
-
-	if h.datasetService.IsSharedMode() {
-		mode = "shared"
-		controlURL = h.config.Control.URL
-		// In shared mode, skip S3 test (needs account_id from auth)
-		s3Status = "not tested (shared mode)"
-	} else {
-		mode = "standalone"
-		tenantID = h.config.S3.TenantID
-		// Test S3 access by listing datasets
-		_, err := h.datasetService.ListDatasets(r.Context(), "", "")
-		if err != nil {
-			s3Status = "error: " + err.Error()
-		}
-	}
-
+	// S3 access is per-dataset via control API
 	response := HealthResponse{
 		Status:     "ok",
 		DuckDB:     duckdbStatus,
-		S3:         s3Status,
-		Mode:       mode,
-		TenantID:   tenantID,
-		ControlURL: controlURL,
+		S3:         "per-dataset via control",
+		Mode:       "connected",
+		TenantID:   "",
+		ControlURL: h.config.Control.URL,
 	}
 
 	if result.Error != "" {

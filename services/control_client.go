@@ -17,6 +17,7 @@ import (
 // ControlClient handles communication with the ByteFreezer control API
 type ControlClient struct {
 	baseURL    string
+	apiKey     string // Service API key for authentication
 	httpClient *http.Client
 }
 
@@ -56,6 +57,7 @@ func NewControlClient(cfg *config.Config) *ControlClient {
 
 	return &ControlClient{
 		baseURL: cfg.Control.URL,
+		apiKey:  cfg.Control.APIKey,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -63,7 +65,7 @@ func NewControlClient(cfg *config.Config) *ControlClient {
 }
 
 // GetTenantsForAccount returns all tenants for an account
-func (c *ControlClient) GetTenantsForAccount(ctx context.Context, accountID string, authToken string) ([]Tenant, error) {
+func (c *ControlClient) GetTenantsForAccount(ctx context.Context, accountID string) ([]Tenant, error) {
 	if c == nil {
 		return nil, fmt.Errorf("control client not configured (standalone mode)")
 	}
@@ -76,9 +78,9 @@ func (c *ControlClient) GetTenantsForAccount(ctx context.Context, accountID stri
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Forward auth token if provided
-	if authToken != "" {
-		req.Header.Set("Authorization", authToken)
+	// Use service API key for authentication
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -101,7 +103,7 @@ func (c *ControlClient) GetTenantsForAccount(ctx context.Context, accountID stri
 }
 
 // GetDatasetsForTenant returns all datasets for a tenant
-func (c *ControlClient) GetDatasetsForTenant(ctx context.Context, tenantID string, authToken string) ([]ControlDataset, error) {
+func (c *ControlClient) GetDatasetsForTenant(ctx context.Context, tenantID string) ([]ControlDataset, error) {
 	if c == nil {
 		return nil, fmt.Errorf("control client not configured (standalone mode)")
 	}
@@ -114,9 +116,9 @@ func (c *ControlClient) GetDatasetsForTenant(ctx context.Context, tenantID strin
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Forward auth token if provided
-	if authToken != "" {
-		req.Header.Set("Authorization", authToken)
+	// Use service API key for authentication
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -150,7 +152,7 @@ type DatasetS3Credentials struct {
 }
 
 // GetDatasetS3Credentials returns S3 credentials for a specific dataset
-func (c *ControlClient) GetDatasetS3Credentials(ctx context.Context, tenantID, datasetID string, authToken string) (*DatasetS3Credentials, error) {
+func (c *ControlClient) GetDatasetS3Credentials(ctx context.Context, tenantID, datasetID string) (*DatasetS3Credentials, error) {
 	if c == nil {
 		return nil, fmt.Errorf("control client not configured (standalone mode)")
 	}
@@ -163,9 +165,9 @@ func (c *ControlClient) GetDatasetS3Credentials(ctx context.Context, tenantID, d
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Forward auth token if provided
-	if authToken != "" {
-		req.Header.Set("Authorization", authToken)
+	// Use service API key for authentication
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
 
 	resp, err := c.httpClient.Do(req)
