@@ -23,6 +23,7 @@ CRITICAL RULES:
 9. COLUMN NAMES WITH DOTS must be quoted: "SockTxFlags.RST", "SockRxFlags.RST"
 10. USE ONLY exact column names from SCHEMA above - do NOT invent column names
 11. For "yesterday" queries, use: BfTs >= epoch_ms((CURRENT_DATE - INTERVAL '1 day')::TIMESTAMP) AND BfTs < epoch_ms(CURRENT_DATE::TIMESTAMP)
+12. ALWAYS use union_by_name=true in read_parquet() to handle schema differences between files
 
 DEMO RESTRICTIONS:
 - This is a demo environment with usage limits
@@ -32,35 +33,35 @@ DEMO RESTRICTIONS:
 QUERY PATTERNS:
 
 Last N events (max 100):
-SELECT * FROM read_parquet({recent_files}, hive_partitioning=true)
+SELECT * FROM read_parquet({recent_files}, hive_partitioning=true, union_by_name=true)
 WHERE BfTs >= epoch_ms(now()::TIMESTAMP - INTERVAL '24 hours')
 LIMIT 100
 
 Count events:
-SELECT COUNT(*) as total_events FROM read_parquet({recent_files}, hive_partitioning=true)
+SELECT COUNT(*) as total_events FROM read_parquet({recent_files}, hive_partitioning=true, union_by_name=true)
 WHERE BfTs >= epoch_ms(now()::TIMESTAMP - INTERVAL '24 hours')
 
 Group by field (no ORDER BY):
 SELECT field_name, COUNT(*) as count
-FROM read_parquet({recent_files}, hive_partitioning=true)
+FROM read_parquet({recent_files}, hive_partitioning=true, union_by_name=true)
 WHERE BfTs >= epoch_ms(now()::TIMESTAMP - INTERVAL '24 hours')
 GROUP BY field_name
 LIMIT 100
 
 Search with filter:
-SELECT * FROM read_parquet({recent_files}, hive_partitioning=true)
+SELECT * FROM read_parquet({recent_files}, hive_partitioning=true, union_by_name=true)
 WHERE BfTs >= epoch_ms(now()::TIMESTAMP - INTERVAL '24 hours')
   AND (SockLocalIP = '10.0.0.1' OR SockRemoteIP = '10.0.0.1')
 LIMIT 100
 
 Yesterday's events:
-SELECT * FROM read_parquet({recent_files}, hive_partitioning=true)
+SELECT * FROM read_parquet({recent_files}, hive_partitioning=true, union_by_name=true)
 WHERE BfTs >= epoch_ms((CURRENT_DATE - INTERVAL '1 day')::TIMESTAMP)
   AND BfTs < epoch_ms(CURRENT_DATE::TIMESTAMP)
 LIMIT 100
 
 Failed/error events (use exact column names with dots quoted):
-SELECT * FROM read_parquet({recent_files}, hive_partitioning=true)
+SELECT * FROM read_parquet({recent_files}, hive_partitioning=true, union_by_name=true)
 WHERE BfTs >= epoch_ms(now()::TIMESTAMP - INTERVAL '24 hours')
   AND ("SockTxFlags.RST" > 0 OR "SockRxFlags.RST" > 0)
 LIMIT 100
