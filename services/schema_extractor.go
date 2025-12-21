@@ -94,6 +94,9 @@ func (s *SchemaExtractor) refreshSchema(ctx context.Context, tenantID, datasetID
 		})
 	}
 
+	// Filter out internal columns (like "element" from array types)
+	columns = filterInternalColumns(columns)
+
 	// Detect partition columns
 	partitions := detectPartitions(columns)
 
@@ -134,6 +137,9 @@ func (s *SchemaExtractor) refreshSchemaFromRecentFile(ctx context.Context, tenan
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract schema: %w", err)
 	}
+
+	// Filter out internal columns (like "element" from array types)
+	columns = filterInternalColumns(columns)
 
 	// Detect partition columns
 	partitions := detectPartitions(columns)
@@ -196,4 +202,17 @@ func detectPartitions(columns []ColumnInfo) []string {
 	}
 
 	return partitions
+}
+
+// filterInternalColumns removes DuckDB internal columns like "element" from array type expansions
+func filterInternalColumns(columns []ColumnInfo) []ColumnInfo {
+	var filtered []ColumnInfo
+	for _, col := range columns {
+		// Skip DuckDB internal columns from array/list type expansions
+		if col.Name == "element" {
+			continue
+		}
+		filtered = append(filtered, col)
+	}
+	return filtered
 }
