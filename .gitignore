@@ -18,3 +18,4 @@ Thumbs.db
 # Go
 vendor/
 CLAUDE.md
+ansible/playbooks/dist/
