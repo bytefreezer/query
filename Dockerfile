@@ -38,5 +38,5 @@ COPY prompts/ ./prompts/
 # Expose port
 EXPOSE 8000
 
-# Run the application
-CMD ["./bytefreezer-query"]
+# Entrypoint
+ENTRYPOINT ["./bytefreezer-query"]
