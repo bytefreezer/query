@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -36,13 +37,11 @@ func main() {
 
 	flag.Parse()
 
-	// Handle version flag
 	if *showVersion {
 		fmt.Printf("bytefreezer-query version %s (built %s, commit %s)\n", version, buildTime, gitCommit)
 		os.Exit(0)
 	}
 
-	// Handle help flag
 	if *showHelp {
 		fmt.Printf("ByteFreezer Query - Natural language query interface for security logs\n\n")
 		fmt.Printf("Usage: %s [options]\n\n", os.Args[0])
@@ -67,8 +66,16 @@ func main() {
 
 	setLogLevel(cfg.Logging.Level)
 
-	// Log configuration
-	log.Infof("Configuration loaded: control=%s, LLM provider=%s", cfg.Control.URL, cfg.LLM.Provider)
+	// Log startup config validation warnings
+	cfg.ValidateStartup()
+
+	// Build instance ID for health reporting
+	instanceID := buildInstanceID()
+
+	log.Infof("Configuration loaded: control=%s, LLM provider=%s, instance_id=%s", cfg.Control.URL, cfg.LLM.Provider, instanceID)
+
+	// Query/error counters for metrics
+	var queryCount, errorCount int64
 
 	// Initialize DuckDB client
 	duckdbClient, err := services.NewDuckDBClient(&cfg)
@@ -86,27 +93,32 @@ func main() {
 	// Initialize schema extractor
 	schemaExtractor := services.NewSchemaExtractor(&cfg, duckdbClient, datasetService)
 
-	// Initialize SQL generator
-	sqlGenerator, err := services.NewSQLGenerator(&cfg, schemaExtractor, datasetService)
-	if err != nil {
-		log.Fatalf("Failed to initialize SQL generator: %v", err)
+	// Initialize SQL generator (only if LLM is configured)
+	var sqlGenerator *services.SQLGenerator
+	if cfg.LLMEnabled() {
+		sqlGenerator, err = services.NewSQLGenerator(&cfg, schemaExtractor, datasetService)
+		if err != nil {
+			log.Fatalf("Failed to initialize SQL generator: %v", err)
+		}
+		log.Infof("LLM enabled: provider=%s, model=%s", cfg.LLM.Provider, cfg.LLM.Model)
+	} else {
+		log.Info("LLM not configured — natural language queries disabled")
 	}
 
 	// Initialize control client for error reporting
 	controlClient := services.NewControlClient(&cfg)
 
 	// Initialize handlers
-	handlers := api.NewHandlers(&cfg, duckdbClient, schemaExtractor, sqlGenerator, datasetService, controlClient)
+	handlers := api.NewHandlers(&cfg, duckdbClient, schemaExtractor, sqlGenerator, datasetService, controlClient, &queryCount, &errorCount)
 
 	// Setup routes
 	mux := http.NewServeMux()
 	api.SetupRoutes(mux, handlers)
 
-	// Apply middleware (order: CORS -> AccountID -> Logging -> Routes)
-	// AccountIDMiddleware extracts account_id from header for shared mode
-	// In standalone mode, no account_id needed (tenant_id from config)
+	// Apply middleware
+	// Use account_id from config as fallback for on-prem/standalone mode
 	handler := api.CORSMiddleware(
-		api.AccountIDMiddleware("")(
+		api.AccountIDMiddleware(cfg.Control.AccountID)(
 			api.LoggingMiddleware(mux),
 		),
 	)
@@ -120,6 +132,32 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 
+	// Start health reporting if enabled
+	var healthService *services.HealthReportingService
+	if cfg.HealthReporting.Enabled && cfg.Control.URL != "" && cfg.Control.AccountID != "" {
+		configMap := map[string]interface{}{
+			"version":    version,
+			"port":       cfg.Server.Port,
+			"llm":        cfg.LLM.Provider,
+			"llm_model":  cfg.LLM.Model,
+			"limits":     map[string]interface{}{"max_row_limit": cfg.Limits.MaxRowLimit, "max_time_range_hours": cfg.Limits.MaxTimeRangeHours, "allow_order_by": cfg.Limits.AllowOrderBy},
+		}
+
+		healthService = services.NewHealthReportingService(
+			cfg.Control.URL,
+			cfg.Control.AccountID,
+			cfg.Control.APIKey,
+			instanceID,
+			fmt.Sprintf("http://localhost:%d", cfg.Server.Port),
+			time.Duration(cfg.HealthReporting.ReportInterval)*time.Second,
+			time.Duration(cfg.HealthReporting.TimeoutSeconds)*time.Second,
+			configMap,
+		)
+		healthService.SetQueryCounters(&queryCount, &errorCount)
+		healthService.Start()
+		defer healthService.Stop()
+	}
+
 	// Start server in goroutine
 	go func() {
 		log.Infof("Server listening on port %d", cfg.Server.Port)
@@ -128,14 +166,26 @@ func main() {
 		}
 	}()
 
-	// Wait for interrupt signal
+	// Wait for interrupt signal or control plane directive
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
+
+	if healthService != nil {
+		select {
+		case <-sigChan:
+			log.Info("Received shutdown signal")
+		case <-healthService.UninstallChan():
+			log.Warn("Received uninstall directive from control plane")
+		case tag := <-healthService.UpgradeChan():
+			log.Warnf("Received upgrade directive from control plane — target tag: %s", tag)
+		}
+	} else {
+		<-sigChan
+	}
 
 	log.Info("Shutting down server...")
+	log.Infof("Final stats: queries=%d, errors=%d", atomic.LoadInt64(&queryCount), atomic.LoadInt64(&errorCount))
 
-	// Graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -157,4 +207,27 @@ func setLogLevel(levelStr string) {
 	case "error":
 		log.SetMinLogLevel(log.MinLevelError)
 	}
+}
+
+// buildInstanceID generates a unique instance ID for this service.
+// In Docker: uses HOST_HOSTNAME:containerID format.
+// On bare metal: uses hostname.
+func buildInstanceID() string {
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "unknown"
+	}
+
+	hostHostname := os.Getenv("HOST_HOSTNAME")
+	if hostHostname != "" && isDockerContainer() {
+		return fmt.Sprintf("%s:%s", hostHostname, hostname)
+	}
+
+	return hostname
+}
+
+// isDockerContainer checks if we're running inside a Docker container
+func isDockerContainer() bool {
+	_, err := os.Stat("/.dockerenv")
+	return err == nil
 }

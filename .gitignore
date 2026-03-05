@@ -1,5 +1,6 @@
 # Binaries (root level only, not dist/)
 bytefreezer-query
+query
 *.exe
 
 # Config files with secrets

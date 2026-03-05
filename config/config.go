@@ -19,18 +19,27 @@ var k = koanf.New(".")
 
 // Config holds all configuration for the query service
 type Config struct {
-	App     AppConfig     `mapstructure:"app"`
-	Logging LoggingConfig `mapstructure:"logging"`
-	Server  ServerConfig  `mapstructure:"server"`
-	LLM     LLMConfig     `mapstructure:"llm"`
-	Limits  LimitsConfig  `mapstructure:"limits"`
-	Control ControlConfig `mapstructure:"control"`
+	App             AppConfig             `mapstructure:"app"`
+	Logging         LoggingConfig         `mapstructure:"logging"`
+	Server          ServerConfig          `mapstructure:"server"`
+	LLM             LLMConfig             `mapstructure:"llm"`
+	Limits          LimitsConfig          `mapstructure:"limits"`
+	Control         ControlConfig         `mapstructure:"control"`
+	HealthReporting HealthReportingConfig `mapstructure:"health_reporting"`
 }
 
-// ControlConfig holds control API connection settings (for shared mode)
+// ControlConfig holds control API connection settings
 type ControlConfig struct {
-	URL    string `mapstructure:"url"`     // Control API URL, e.g. "http://localhost:8082" (empty = standalone mode)
-	APIKey string `mapstructure:"api_key"` // Service API key for control API authentication (service-to-service)
+	URL       string `mapstructure:"url"`
+	APIKey    string `mapstructure:"api_key"`
+	AccountID string `mapstructure:"account_id"`
+}
+
+// HealthReportingConfig holds health reporting settings
+type HealthReportingConfig struct {
+	Enabled        bool `mapstructure:"enabled"`
+	ReportInterval int  `mapstructure:"report_interval"` // seconds
+	TimeoutSeconds int  `mapstructure:"timeout_seconds"`
 }
 
 // LimitsConfig holds query limits for demo/production
@@ -59,10 +68,21 @@ type ServerConfig struct {
 
 // LLMConfig holds LLM provider settings
 type LLMConfig struct {
-	Provider   string `mapstructure:"provider"` // anthropic, openai, ollama
+	Provider   string `mapstructure:"provider"` // anthropic, openai, ollama, or empty to disable
 	APIKey     string `mapstructure:"api_key"`
 	Model      string `mapstructure:"model"`
 	OllamaHost string `mapstructure:"ollama_host"`
+}
+
+// LLMEnabled returns true if an LLM provider is configured and usable
+func (c *Config) LLMEnabled() bool {
+	if c.LLM.Provider == "" {
+		return false
+	}
+	if c.LLM.Provider == "ollama" {
+		return true // ollama doesn't need an API key
+	}
+	return c.LLM.APIKey != ""
 }
 
 // LoadConfig loads configuration from YAML file with environment variable overrides
@@ -112,15 +132,13 @@ func LoadConfig(cfgFile, envPrefix string, cfg *Config) error {
 	if cfg.Server.Port == 0 {
 		cfg.Server.Port = 8000
 	}
-	if cfg.LLM.Provider == "" {
-		cfg.LLM.Provider = "anthropic"
-	}
-	if cfg.LLM.Model == "" {
-		if cfg.LLM.Provider == "anthropic" {
+	if cfg.LLM.Model == "" && cfg.LLM.Provider != "" {
+		switch cfg.LLM.Provider {
+		case "anthropic":
 			cfg.LLM.Model = "claude-sonnet-4-20250514"
-		} else if cfg.LLM.Provider == "openai" {
+		case "openai":
 			cfg.LLM.Model = "gpt-4"
-		} else {
+		default:
 			cfg.LLM.Model = "llama2"
 		}
 	}
@@ -131,10 +149,18 @@ func LoadConfig(cfgFile, envPrefix string, cfg *Config) error {
 		cfg.Logging.Level = "info"
 	}
 	if cfg.Limits.MaxTimeRangeHours == 0 {
-		cfg.Limits.MaxTimeRangeHours = 24
+		cfg.Limits.MaxTimeRangeHours = 720 // 30 days default for on-prem
 	}
 	if cfg.Limits.MaxRowLimit == 0 {
-		cfg.Limits.MaxRowLimit = 100
+		cfg.Limits.MaxRowLimit = 10000
+	}
+	// AllowOrderBy defaults to false (zero value), which is fine for demo
+	// On-prem configs should set it to true explicitly
+	if cfg.HealthReporting.ReportInterval == 0 {
+		cfg.HealthReporting.ReportInterval = 30
+	}
+	if cfg.HealthReporting.TimeoutSeconds == 0 {
+		cfg.HealthReporting.TimeoutSeconds = 10
 	}
 
 	return nil
@@ -142,13 +168,53 @@ func LoadConfig(cfgFile, envPrefix string, cfg *Config) error {
 
 // Validate checks that required configuration is present
 func (cfg *Config) Validate() error {
-	// Control URL is required - S3 credentials come from control API per dataset
 	if cfg.Control.URL == "" {
 		return pkgerrors.New("control.url is required - query service gets S3 credentials from control API per dataset")
 	}
 
-	if cfg.LLM.APIKey == "" && cfg.LLM.Provider != "ollama" {
-		return pkgerrors.Errorf("llm.api_key is required for provider %s", cfg.LLM.Provider)
+	// LLM is optional — if not configured, NL queries are disabled
+	if cfg.LLM.Provider != "" && cfg.LLM.Provider != "ollama" && cfg.LLM.APIKey == "" {
+		log.Warn("LLM API key not configured — natural language queries will be disabled. Raw SQL queries still work.")
+		cfg.LLM.Provider = "" // Disable LLM
 	}
+
 	return nil
+}
+
+// ValidateStartup logs warnings about potentially misconfigured values
+func (cfg *Config) ValidateStartup() {
+	if cfg.Server.Port == 0 {
+		log.Warn("server.port is 0 — API will bind to a random port")
+	}
+
+	if cfg.HealthReporting.Enabled && cfg.HealthReporting.ReportInterval == 0 {
+		log.Warn("health_reporting.report_interval is 0 — no health reports will be sent")
+	}
+
+	if cfg.HealthReporting.Enabled && cfg.Control.AccountID == "" {
+		log.Warn("control.account_id not set — health reporting requires account_id")
+	}
+
+	if cfg.HealthReporting.Enabled && cfg.Control.APIKey == "" {
+		log.Warn("control.api_key not set — health reporting requires api_key for authentication")
+	}
+
+	if !cfg.LLMEnabled() {
+		log.Info("LLM not configured — natural language queries disabled, raw SQL queries available")
+	}
+
+	// Log effective config summary
+	log.Infof("Config summary: port=%d, control=%s, account=%s, llm=%s, health_reporting=%v (interval=%ds)",
+		cfg.Server.Port,
+		cfg.Control.URL,
+		cfg.Control.AccountID,
+		cfg.LLM.Provider,
+		cfg.HealthReporting.Enabled,
+		cfg.HealthReporting.ReportInterval,
+	)
+	log.Infof("Query limits: max_rows=%d, max_time_range=%dh, allow_order_by=%v",
+		cfg.Limits.MaxRowLimit,
+		cfg.Limits.MaxTimeRangeHours,
+		cfg.Limits.AllowOrderBy,
+	)
 }

@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ByteFreezer Query</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -23,11 +22,8 @@
       align-items: center;
       gap: 12px;
     }
-    h1 img { height: 36px; }
     h1 svg { width: 32px; height: 32px; }
-    .dataset-selector {
-      margin-bottom: 16px;
-    }
+    .dataset-selector { margin-bottom: 16px; }
     .dataset-selector label {
       display: block;
       margin-bottom: 6px;
@@ -83,9 +79,7 @@
     }
     .btn:hover { background: #3b82f6; }
     .btn:disabled { background: #334155; cursor: not-allowed; }
-    .btn-secondary {
-      background: #334155;
-    }
+    .btn-secondary { background: #334155; }
     .btn-secondary:hover { background: #475569; }
     .sql-preview {
       background: #0f172a;
@@ -100,9 +94,7 @@
       max-height: 200px;
       overflow-y: auto;
     }
-    .sql-preview:focus {
-      outline: 1px solid #3b82f6;
-    }
+    .sql-preview:focus { outline: 1px solid #3b82f6; }
     .results-table {
       width: 100%;
       border-collapse: collapse;
@@ -142,9 +134,7 @@
       font-size: 14px;
       margin: 12px 0;
     }
-    .stats span {
-      margin-right: 20px;
-    }
+    .stats span { margin-right: 20px; }
     .schema-sidebar {
       position: fixed;
       right: 20px;
@@ -218,10 +208,6 @@
     }
     .example-query:hover { background: #475569; }
     .example-query:last-child { margin-bottom: 0; }
-    .loading-datasets {
-      color: #888;
-      font-style: italic;
-    }
     .query-warnings {
       padding: 12px 16px;
       background: #2d2a1f;
@@ -241,62 +227,57 @@
     .query-warnings .warning-icon { color: #f0ad4e; }
     .query-warnings .info-icon { color: #5bc0de; }
     .query-warnings .danger-icon { color: #d9534f; }
-    .query-warnings .size-info {
-      color: #888;
-    }
-    .query-estimate {
-      padding: 10px 16px;
-      background: #1a2a3e;
-      border: 1px solid #2a4a6e;
-      border-radius: 6px;
-      margin: 12px 0;
-      font-size: 13px;
-      color: #aaa;
-    }
-    .query-estimate b { color: #fff; }
     .limits-info {
       display: inline-block;
       padding: 8px 14px;
-      background: #422006;
-      border: 1px solid #f59e0b;
-      border-radius: 6px;
-      font-size: 13px;
-      color: #fcd34d;
-    }
-    .limits-info span { color: #fbbf24; font-weight: 500; }
-    .demo-notice {
-      padding: 12px 16px;
       background: #1e293b;
       border: 1px solid #334155;
-      border-left: 3px solid #3b82f6;
       border-radius: 6px;
       font-size: 13px;
       color: #94a3b8;
+    }
+    .limits-info span { color: #e2e8f0; font-weight: 500; }
+    .tab-bar {
+      display: flex;
+      gap: 2px;
       margin-bottom: 16px;
-      line-height: 1.5;
+      background: #1e293b;
+      border-radius: 6px;
+      padding: 4px;
     }
-    .demo-notice strong { color: #e2e8f0; }
-    .demo-notice a { color: #60a5fa; text-decoration: none; }
-    .demo-notice a:hover { text-decoration: underline; }
-    .demo-info-popup {
-      margin-top: 12px;
-      padding-top: 12px;
-      border-top: 1px solid #334155;
-    }
-    .demo-info-popup p {
-      margin: 10px 0 4px 0;
-      color: #e2e8f0;
-      font-size: 13px;
-    }
-    .demo-info-popup p:first-child { margin-top: 0; }
-    .demo-info-popup ul {
-      margin: 0;
-      padding-left: 18px;
+    .tab-bar button {
+      flex: 1;
+      padding: 10px 16px;
+      background: transparent;
       color: #94a3b8;
-      font-size: 12px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.2s;
     }
-    .demo-info-popup li { margin: 3px 0; }
-    .demo-info-popup b { color: #e2e8f0; }
+    .tab-bar button.active {
+      background: #334155;
+      color: #e2e8f0;
+    }
+    .tab-bar button:hover:not(.active) { color: #e2e8f0; }
+    .tab-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .sql-input {
+      width: 100%;
+      min-height: 100px;
+      padding: 14px 16px;
+      font-size: 14px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #e2e8f0;
+      border-radius: 6px;
+      outline: none;
+      resize: vertical;
+    }
+    .sql-input:focus { border-color: #3b82f6; }
+    .sql-input::placeholder { color: #64748b; }
   </style>
 </head>
 <body>
@@ -307,28 +288,6 @@
       <span style="font-size: 1.25rem; font-weight: 400; color: #94a3b8;">Query</span>
     </h1>
 
-    <div class="demo-notice">
-      <strong>Demo Environment</strong> — This is a demonstration of bytefreezer-query using sample eBPF data. Not for commercial use.
-      For production workloads, use <a href="https://docs.bytefreezer.com/querying" target="_blank">DuckDB directly</a> or integrate with your preferred analytics tools.
-      <a href="#" onclick="toggleDemoInfo(); return false;">more on performance</a>
-      <div id="demoInfoPopup" class="demo-info-popup" style="display: none;">
-        <p><b>Query Optimizations</b></p>
-        <ul>
-          <li>Data is partitioned by hour for efficient time filtering</li>
-          <li>Parquet files are pre-sorted by timestamp</li>
-          <li>"Last N events" queries skip ORDER BY (data already recent)</li>
-          <li>Aggregations (COUNT, GROUP BY) are fast - small result sets</li>
-        </ul>
-        <p><b>For Best Performance</b></p>
-        <ul>
-          <li>Use "recent" or "last N" queries - reads fewer files</li>
-          <li>Avoid ORDER BY on large result sets over remote storage</li>
-          <li>Add filters (WHERE) to reduce data scanned</li>
-          <li>Use LIMIT to cap results</li>
-        </ul>
-      </div>
-    </div>
-
     <div class="dataset-selector">
       <label>Dataset</label>
       <select class="dataset-select" id="datasetSelect" onchange="onDatasetChange()">
@@ -337,20 +296,36 @@
       <div class="account-info" id="accountInfo"></div>
     </div>
 
-    <input type="text" class="query-input" id="questionInput"
-           placeholder="Select a dataset first..." disabled>
-    <div style="display: flex; align-items: center; gap: 12px; margin-top: 12px;">
-      <button class="btn" id="askBtn" onclick="askQuestion()" disabled style="margin-top: 0;">Ask</button>
-      <div class="limits-info" id="limitsInfo" style="margin-top: 0;">
-        Loading limits...
+    <div class="tab-bar" id="tabBar">
+      <button id="tabNL" class="active" onclick="switchTab('nl')">Ask a Question</button>
+      <button id="tabSQL" onclick="switchTab('sql')">Raw SQL</button>
+    </div>
+
+    <!-- Natural Language Tab -->
+    <div id="nlPanel">
+      <input type="text" class="query-input" id="questionInput"
+             placeholder="Select a dataset first..." disabled>
+      <div style="display: flex; align-items: center; gap: 12px; margin-top: 12px;">
+        <button class="btn" id="askBtn" onclick="askQuestion()" disabled style="margin-top: 0;">Ask</button>
+        <div class="limits-info" id="limitsInfo" style="margin-top: 0;">Loading limits...</div>
+      </div>
+
+      <div id="sqlPreview" class="sql-preview" style="display:none;" contenteditable="true"></div>
+      <div id="queryWarnings" class="query-warnings" style="display:none;"></div>
+      <div id="sqlButtons" style="display:none;">
+        <button class="btn" onclick="runGeneratedSql()">Execute Query</button>
+        <button class="btn btn-secondary" onclick="regenerateQuery()">Regenerate</button>
       </div>
     </div>
 
-    <div id="sqlPreview" class="sql-preview" style="display:none;" contenteditable="true"></div>
-    <div id="queryWarnings" class="query-warnings" style="display:none;"></div>
-    <div id="sqlButtons" style="display:none;">
-      <button class="btn" onclick="runSql()">Execute Query</button>
-      <button class="btn btn-secondary" onclick="regenerateQuery()">Regenerate</button>
+    <!-- Raw SQL Tab -->
+    <div id="sqlPanel" style="display: none;">
+      <textarea class="sql-input" id="sqlInput"
+                placeholder="SELECT * FROM read_parquet('s3://...', hive_partitioning=true) LIMIT 100"></textarea>
+      <div style="display: flex; align-items: center; gap: 12px; margin-top: 12px;">
+        <button class="btn" id="runSqlBtn" onclick="runRawSql()" disabled style="margin-top: 0;">Execute</button>
+        <div class="limits-info" id="sqlLimitsInfo" style="margin-top: 0;"></div>
+      </div>
     </div>
 
     <div id="error" class="error" style="display:none;"></div>
@@ -360,20 +335,9 @@
       <div id="results"></div>
     </div>
 
-    <div class="example-queries">
-      <h4>Example queries</h4>
-      <div class="example-query" onclick="setQuestion('Show me the last 100 events')">
-        Show me the last 100 events
-      </div>
-      <div class="example-query" onclick="setQuestion('Count events by type in the last 24 hours')">
-        Count events by type in the last 24 hours
-      </div>
-      <div class="example-query" onclick="setQuestion('What are the top 10 source IPs by event count?')">
-        What are the top 10 source IPs by event count?
-      </div>
-      <div class="example-query" onclick="setQuestion('Show failed events from yesterday')">
-        Show failed events from yesterday
-      </div>
+    <div class="example-queries" id="exampleQueries">
+      <h4 id="examplesHeader">Example queries</h4>
+      <div id="examplesList"></div>
     </div>
 
   </div>
@@ -386,9 +350,60 @@
   <script>
     let currentSql = '';
     let selectedDatasetId = '';
+    let selectedTenantId = '';
     let currentQuestion = '';
-    let datasetFiles = []; // Cache of files with sizes
-    let queryLimits = { max_time_range_hours: 24, max_row_limit: 100, allow_order_by: false };
+    let queryLimits = { max_time_range_hours: 720, max_row_limit: 10000, allow_order_by: true, llm_enabled: true };
+    let currentTab = 'nl';
+
+    const nlExamples = [
+      'Show me the last 100 events',
+      'Count events by type in the last 24 hours',
+      'What are the top 10 source IPs by event count?',
+      'Show failed events from yesterday'
+    ];
+
+    const sqlExamples = [
+      "SELECT * FROM read_parquet('PARQUET_PATH', hive_partitioning=true, union_by_name=true) LIMIT 100",
+      "SELECT COUNT(*) as total FROM read_parquet('PARQUET_PATH', hive_partitioning=true, union_by_name=true)",
+      "SELECT DISTINCT * FROM read_parquet('PARQUET_PATH', hive_partitioning=true, union_by_name=true) WHERE year=2026 AND month=3 LIMIT 50"
+    ];
+
+    function switchTab(tab) {
+      currentTab = tab;
+      document.getElementById('tabNL').classList.toggle('active', tab === 'nl');
+      document.getElementById('tabSQL').classList.toggle('active', tab === 'sql');
+      document.getElementById('nlPanel').style.display = tab === 'nl' ? 'block' : 'none';
+      document.getElementById('sqlPanel').style.display = tab === 'sql' ? 'block' : 'none';
+      clearResults();
+      hideError();
+      updateExamples();
+    }
+
+    function updateExamples() {
+      const list = document.getElementById('examplesList');
+      const examples = currentTab === 'nl' ? nlExamples : sqlExamples;
+      list.innerHTML = examples.map(q => {
+        let display = q;
+        if (currentTab === 'sql' && selectedDatasetId) {
+          display = q.replace(/PARQUET_PATH/g, 's3://packer/' + selectedTenantId + '/' + selectedDatasetId + '/data/parquet/**/*.parquet');
+        }
+        return '<div class="example-query" onclick="setExample(\'' + escapeAttr(display) + '\')">' + escapeHtml(display) + '</div>';
+      }).join('');
+    }
+
+    function setExample(q) {
+      if (!selectedDatasetId) {
+        alert('Please select a dataset first');
+        return;
+      }
+      if (currentTab === 'nl') {
+        document.getElementById('questionInput').value = q;
+        document.getElementById('questionInput').focus();
+      } else {
+        document.getElementById('sqlInput').value = q;
+        document.getElementById('sqlInput').focus();
+      }
+    }
 
     async function loadLimits() {
       try {
@@ -396,15 +411,21 @@
         const data = await res.json();
         queryLimits = data;
 
-        let limitsText = 'Demo limits: ';
-        limitsText += `<span>${data.max_time_range_hours}hr</span> time range, `;
-        limitsText += `<span>${data.max_row_limit}</span> row max`;
-        if (!data.allow_order_by) {
-          limitsText += ', no ORDER BY';
+        // If LLM not available, switch to SQL tab and disable NL tab
+        if (!data.llm_enabled) {
+          document.getElementById('tabNL').disabled = true;
+          document.getElementById('tabNL').title = 'LLM not configured';
+          switchTab('sql');
         }
+
+        let limitsText = '<span>' + data.max_time_range_hours + 'hr</span> range, ';
+        limitsText += '<span>' + data.max_row_limit + '</span> row max';
+        if (!data.allow_order_by) limitsText += ', no ORDER BY';
         document.getElementById('limitsInfo').innerHTML = limitsText;
+        document.getElementById('sqlLimitsInfo').innerHTML = limitsText;
       } catch (e) {
-        document.getElementById('limitsInfo').textContent = 'Demo limits: 24hr time range, 100 row max, no ORDER BY';
+        document.getElementById('limitsInfo').textContent = 'Could not load limits';
+        document.getElementById('sqlLimitsInfo').textContent = 'Could not load limits';
       }
     }
 
@@ -439,11 +460,10 @@
 
         select.innerHTML = '<option value="">Select a dataset...</option>' +
           data.datasets.map(d =>
-            '<option value="' + d.id + '" data-size="' + d.size_bytes + '" data-files="' + d.file_count + '">' +
+            '<option value="' + d.id + '" data-tenant="' + d.tenant_id + '" data-size="' + d.size_bytes + '" data-files="' + d.file_count + '">' +
             d.name + ' (' + formatBytes(d.size_bytes) + ', ' + d.file_count + ' files)</option>'
           ).join('');
 
-        // Auto-select if only one dataset
         if (data.datasets.length === 1) {
           select.value = data.datasets[0].id;
           onDatasetChange();
@@ -456,63 +476,61 @@
     }
 
     function onDatasetChange() {
-      selectedDatasetId = document.getElementById('datasetSelect').value;
+      const select = document.getElementById('datasetSelect');
+      selectedDatasetId = select.value;
+      const option = select.options[select.selectedIndex];
+      selectedTenantId = option ? option.dataset.tenant : '';
+
       const input = document.getElementById('questionInput');
-      const btn = document.getElementById('askBtn');
+      const askBtn = document.getElementById('askBtn');
+      const runBtn = document.getElementById('runSqlBtn');
 
       if (selectedDatasetId) {
         input.disabled = false;
         input.placeholder = "Ask a question... e.g., 'show me failed logins in the last hour'";
-        btn.disabled = false;
+        askBtn.disabled = false;
+        runBtn.disabled = false;
         loadSchema();
       } else {
         input.disabled = true;
         input.placeholder = 'Select a dataset first...';
-        btn.disabled = true;
+        askBtn.disabled = true;
+        runBtn.disabled = true;
         document.getElementById('schemaContent').innerHTML = 'Select a dataset to view schema';
       }
 
-      // Clear previous results
       clearResults();
       hideError();
       hideWarnings();
       document.getElementById('sqlPreview').style.display = 'none';
       document.getElementById('sqlButtons').style.display = 'none';
+      updateExamples();
     }
 
     async function loadSchema() {
-      if (!selectedDatasetId) return;
+      if (!selectedDatasetId || !selectedTenantId) return;
 
       document.getElementById('schemaContent').innerHTML = 'Loading...';
 
       try {
-        const res = await fetch('/api/v1/schema?dataset_id=' + encodeURIComponent(selectedDatasetId));
+        const res = await fetch('/api/v1/schema?dataset_id=' + encodeURIComponent(selectedDatasetId) + '&tenant_id=' + encodeURIComponent(selectedTenantId));
         const data = await res.json();
         if (data.error) {
-          document.getElementById('schemaContent').innerHTML = '<div class="error">' + data.error + '</div>';
+          document.getElementById('schemaContent').innerHTML = '<div class="error">' + escapeHtml(data.error) + '</div>';
           return;
         }
         document.getElementById('schemaContent').innerHTML =
           data.columns.map(c =>
-            '<div class="schema-column"><b>' + c.name + '</b> <span>' + c.type + '</span></div>'
+            '<div class="schema-column"><b>' + escapeHtml(c.name) + '</b> <span>' + escapeHtml(c.type) + '</span></div>'
           ).join('');
       } catch (e) {
         document.getElementById('schemaContent').innerHTML =
-          '<div class="error">Failed to load schema: ' + e.message + '</div>';
+          '<div class="error">Failed to load schema: ' + escapeHtml(e.message) + '</div>';
       }
-    }
-
-    function setQuestion(q) {
-      if (!selectedDatasetId) {
-        alert('Please select a dataset first');
-        return;
-      }
-      document.getElementById('questionInput').value = q;
-      document.getElementById('questionInput').focus();
     }
 
     async function askQuestion() {
-      if (!selectedDatasetId) {
+      if (!selectedDatasetId || !selectedTenantId) {
         showError('Please select a dataset first');
         return;
       }
@@ -521,18 +539,18 @@
       if (!question) return;
 
       currentQuestion = question;
-      setLoading(true);
+      setLoading(true, 'askBtn');
       hideError();
       clearResults();
       hideWarnings();
 
       try {
-        // Only generate SQL, don't execute
         const res = await fetch('/api/v1/query/generate', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
             dataset_id: selectedDatasetId,
+            tenant_id: selectedTenantId,
             question: question
           })
         });
@@ -545,100 +563,50 @@
           document.getElementById('sqlPreview').textContent = data.sql;
           document.getElementById('sqlPreview').style.display = 'block';
           document.getElementById('sqlButtons').style.display = 'block';
-
-          // Analyze the query and show warnings
           analyzeQuery(data.sql);
         }
       } catch (e) {
         showError('Request failed: ' + e.message);
       }
-      setLoading(false);
+      setLoading(false, 'askBtn');
     }
 
     function analyzeQuery(sql) {
       const warnings = [];
       const upperSql = sql.toUpperCase();
 
-      // Check for ORDER BY (slow over network)
-      if (upperSql.includes('ORDER BY') && !upperSql.includes('ORDER BY COUNT')) {
-        // ORDER BY on aggregates is fine, ORDER BY on raw data is slow
-        const hasGroupBy = upperSql.includes('GROUP BY');
-        if (!hasGroupBy) {
-          warnings.push({
-            type: 'warning',
-            text: 'ORDER BY requires scanning all matching data - may be slow over network'
-          });
-        }
+      if (upperSql.includes('ORDER BY') && !upperSql.includes('GROUP BY')) {
+        warnings.push({ type: 'warning', text: 'ORDER BY requires scanning all matching data - may be slow over network' });
       }
 
-      // Extract file paths and estimate size
-      const fileMatches = sql.match(/s3:\/\/[^'"\s\]]+/g) || [];
       const isGlobQuery = sql.includes('/**/*.parquet') || sql.includes('hive_partitioning=true');
-
-      // Check if using recent files list (array of specific files)
-      const recentFilesMatch = sql.match(/\[([^\]]+)\]/);
-      let fileCount = 0;
-      let estimatedSize = 0;
-
-      if (recentFilesMatch) {
-        // Count files in the array
-        const filesInArray = recentFilesMatch[1].match(/s3:\/\/[^'",]+/g) || [];
-        fileCount = filesInArray.length;
-
-        // Estimate size from cached dataset files
-        filesInArray.forEach(path => {
-          const file = datasetFiles.find(f => path.includes(f.key));
-          if (file) estimatedSize += file.size;
-        });
-
-        if (fileCount > 0) {
-          warnings.push({
-            type: 'info',
-            text: `Scanning ${fileCount} recent file${fileCount > 1 ? 's' : ''} (~${formatBytes(estimatedSize || fileCount * 50 * 1024 * 1024)})`
-          });
-        }
-      } else if (isGlobQuery) {
-        // Full dataset scan
+      if (isGlobQuery) {
         const select = document.getElementById('datasetSelect');
         const option = select.options[select.selectedIndex];
         if (option) {
-          fileCount = parseInt(option.dataset.files) || 0;
-          estimatedSize = parseInt(option.dataset.size) || 0;
-        }
-
-        if (fileCount > 10) {
-          warnings.push({
-            type: 'danger',
-            text: `Full dataset scan: ${fileCount} files (~${formatBytes(estimatedSize)}) - may be slow!`
-          });
-        } else if (fileCount > 0) {
-          warnings.push({
-            type: 'warning',
-            text: `Scanning ${fileCount} files (~${formatBytes(estimatedSize)})`
-          });
+          const fileCount = parseInt(option.dataset.files) || 0;
+          const estimatedSize = parseInt(option.dataset.size) || 0;
+          if (fileCount > 10) {
+            warnings.push({ type: 'danger', text: 'Full dataset scan: ' + fileCount + ' files (~' + formatBytes(estimatedSize) + ') - may be slow!' });
+          } else if (fileCount > 0) {
+            warnings.push({ type: 'info', text: 'Scanning ' + fileCount + ' files (~' + formatBytes(estimatedSize) + ')' });
+          }
         }
       }
 
-      // Check for missing LIMIT
       if (!upperSql.includes('LIMIT')) {
-        warnings.push({
-          type: 'warning',
-          text: 'No LIMIT clause - consider adding one to avoid large result sets'
-        });
+        warnings.push({ type: 'warning', text: 'No LIMIT clause - consider adding one' });
       }
 
-      // Display warnings
-      if (warnings.length > 0) {
-        showWarnings(warnings);
-      }
+      if (warnings.length > 0) showWarnings(warnings);
     }
 
     function showWarnings(warnings) {
       const container = document.getElementById('queryWarnings');
       container.innerHTML = warnings.map(w => {
         const iconClass = w.type === 'danger' ? 'danger-icon' : (w.type === 'warning' ? 'warning-icon' : 'info-icon');
-        const icon = w.type === 'danger' ? '⚠' : (w.type === 'warning' ? '⚡' : 'ℹ');
-        return `<div class="warning-item"><span class="${iconClass}">${icon}</span> ${w.text}</div>`;
+        const icon = w.type === 'danger' ? '!' : (w.type === 'warning' ? '~' : 'i');
+        return '<div class="warning-item"><span class="' + iconClass + '">[' + icon + ']</span> ' + w.text + '</div>';
       }).join('');
       container.style.display = 'block';
     }
@@ -654,18 +622,37 @@
       }
     }
 
-    async function runSql() {
+    async function runGeneratedSql() {
       const sql = document.getElementById('sqlPreview').textContent.trim();
       if (!sql) return;
+      await executeSql(sql);
+    }
 
-      setLoading(true);
+    async function runRawSql() {
+      const sql = document.getElementById('sqlInput').value.trim();
+      if (!sql) return;
+      await executeSql(sql);
+    }
+
+    async function executeSql(sql) {
+      if (!selectedDatasetId || !selectedTenantId) {
+        showError('Please select a dataset first');
+        return;
+      }
+
+      const btnId = currentTab === 'nl' ? 'askBtn' : 'runSqlBtn';
+      setLoading(true, btnId);
       hideError();
 
       try {
         const res = await fetch('/api/v1/query/sql', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({sql})
+          body: JSON.stringify({
+            sql: sql,
+            tenant_id: selectedTenantId,
+            dataset_id: selectedDatasetId
+          })
         });
         const data = await res.json();
 
@@ -677,7 +664,7 @@
       } catch (e) {
         showError('Request failed: ' + e.message);
       }
-      setLoading(false);
+      setLoading(false, btnId);
     }
 
     function renderResults(data) {
@@ -697,7 +684,7 @@
         html += '<tr>';
         row.forEach(cell => {
           const val = cell === null ? '<span style="color:#666">null</span>' : escapeHtml(String(cell));
-          html += '<td title="' + escapeHtml(String(cell || '')) + '">' + val + '</td>';
+          html += '<td title="' + escapeAttr(String(cell || '')) + '">' + val + '</td>';
         });
         html += '</tr>';
       });
@@ -705,10 +692,15 @@
       document.getElementById('results').innerHTML = html;
     }
 
-    function setLoading(loading) {
-      const btn = document.getElementById('askBtn');
+    function setLoading(loading, btnId) {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
       btn.disabled = loading || !selectedDatasetId;
-      btn.innerHTML = loading ? '<span class="spinner"></span>Thinking...' : 'Ask';
+      if (btnId === 'askBtn') {
+        btn.innerHTML = loading ? '<span class="spinner"></span>Thinking...' : 'Ask';
+      } else {
+        btn.innerHTML = loading ? '<span class="spinner"></span>Running...' : 'Execute';
+      }
     }
 
     function showError(msg) {
@@ -732,27 +724,28 @@
       return div.innerHTML;
     }
 
-    function toggleDemoInfo() {
-      const popup = document.getElementById('demoInfoPopup');
-      popup.style.display = popup.style.display === 'none' ? 'block' : 'none';
+    function escapeAttr(str) {
+      return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
-    // Allow Enter key to submit
+    // Enter key handlers
     document.getElementById('questionInput').addEventListener('keypress', (e) => {
       if (e.key === 'Enter' && selectedDatasetId) askQuestion();
     });
 
-    // Re-analyze query when user edits SQL directly
-    document.getElementById('sqlPreview').addEventListener('input', (e) => {
-      const sql = e.target.textContent.trim();
-      if (sql) {
-        analyzeQuery(sql);
-      }
+    document.getElementById('sqlInput').addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && selectedDatasetId) runRawSql();
     });
 
-    // Load limits and datasets on page load
+    document.getElementById('sqlPreview').addEventListener('input', (e) => {
+      const sql = e.target.textContent.trim();
+      if (sql) analyzeQuery(sql);
+    });
+
+    // Init
     loadLimits();
     loadDatasets();
+    updateExamples();
   </script>
 </body>
 </html>
