@@ -204,9 +204,11 @@
       border-radius: 4px;
       margin-bottom: 8px;
       cursor: pointer;
-      transition: background 0.2s;
+      transition: all 0.2s;
+      border-left: 3px solid #3b82f6;
+      font-size: 13px;
     }
-    .example-query:hover { background: #475569; }
+    .example-query:hover { background: #475569; border-left-color: #60a5fa; }
     .example-query:last-child { margin-bottom: 0; }
     .query-warnings {
       padding: 12px 16px;
@@ -321,7 +323,7 @@
     <!-- Raw SQL Tab -->
     <div id="sqlPanel" style="display: none;">
       <textarea class="sql-input" id="sqlInput"
-                placeholder="SELECT * FROM read_parquet('s3://...', hive_partitioning=true) LIMIT 100"></textarea>
+                placeholder="Select a dataset to load a default query..."></textarea>
       <div style="display: flex; align-items: center; gap: 12px; margin-top: 12px;">
         <button class="btn" id="runSqlBtn" onclick="runRawSql()" disabled style="margin-top: 0;">Execute</button>
         <div class="limits-info" id="sqlLimitsInfo" style="margin-top: 0;"></div>
@@ -336,7 +338,7 @@
     </div>
 
     <div class="example-queries" id="exampleQueries">
-      <h4 id="examplesHeader">Example queries</h4>
+      <h4 id="examplesHeader">Example queries <span style="font-weight:400;color:#64748b;">— click to use</span></h4>
       <div id="examplesList"></div>
     </div>
 
@@ -491,6 +493,13 @@
         askBtn.disabled = false;
         runBtn.disabled = false;
         loadSchema();
+        // Pre-fill SQL input with first example query so it's ready to execute
+        const sqlInput = document.getElementById('sqlInput');
+        if (!sqlInput.value.trim()) {
+          const defaultSql = sqlExamples[0].replace(/PARQUET_PATH/g,
+            's3://packer/' + selectedTenantId + '/' + selectedDatasetId + '/data/parquet/**/*.parquet');
+          sqlInput.value = defaultSql;
+        }
       } else {
         input.disabled = true;
         input.placeholder = 'Select a dataset first...';
@@ -536,7 +545,10 @@
       }
 
       const question = document.getElementById('questionInput').value.trim();
-      if (!question) return;
+      if (!question) {
+        showError('Enter a question before asking.');
+        return;
+      }
 
       currentQuestion = question;
       setLoading(true, 'askBtn');
@@ -624,13 +636,19 @@
 
     async function runGeneratedSql() {
       const sql = document.getElementById('sqlPreview').textContent.trim();
-      if (!sql) return;
+      if (!sql) {
+        showError('No SQL to execute. Generate a query first.');
+        return;
+      }
       await executeSql(sql);
     }
 
     async function runRawSql() {
       const sql = document.getElementById('sqlInput').value.trim();
-      if (!sql) return;
+      if (!sql) {
+        showError('Enter a SQL query before executing.');
+        return;
+      }
       await executeSql(sql);
     }
 
