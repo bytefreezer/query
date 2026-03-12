@@ -1,18 +1,21 @@
 # ByteFreezer Query
 
-AI-powered natural language query interface for security log analysis using DuckDB.
+SQL query service for ByteFreezer parquet data with optional AI-powered natural language interface.
 
 ## Overview
 
-ByteFreezer Query allows you to query Parquet data stored in S3 using natural language. It uses LLMs (Anthropic, OpenAI, or Ollama) to translate questions into DuckDB SQL, then executes them against your data.
+ByteFreezer Query provides a web UI and REST API for querying parquet files stored in S3/MinIO. Raw SQL queries work out of the box. Optionally connect an LLM (Anthropic, OpenAI, or Ollama) to ask questions in natural language — the LLM translates your question into DuckDB SQL, which executes locally against your data.
+
+**Web UI:** `http://localhost:8000`
 
 **Key features:**
-- Natural language to SQL conversion
-- Direct DuckDB queries on S3 Parquet files
-- Supports Anthropic, OpenAI, and Ollama
-- Runs in your VPC - your data never leaves your environment
-- Simple web UI for interactive queries
-- Demo limits (configurable): max time range, row limit, ORDER BY restriction
+- Web UI with dataset selector, schema sidebar, and query results table
+- Raw SQL tab — works immediately with no extra setup
+- Ask a Question tab — natural language queries (requires LLM provider)
+- DuckDB queries on S3/MinIO parquet files
+- Three LLM providers: Anthropic (Claude), OpenAI (GPT), Ollama (local)
+- Your data never leaves your environment — LLM only sees column names and types
+- Configurable limits: max time range, row limit, ORDER BY restriction
 
 ## Deployment Modes
 
@@ -63,7 +66,20 @@ See ByteFreezer UI documentation for integration details.
 
 ## Quick Start
 
-### Using Docker
+### On-Prem (Docker Compose)
+
+The query service is included in the ByteFreezer on-prem Docker Compose stack. After
+deploying the full stack, the query web UI is available at:
+
+```
+http://<your-host>:8000
+```
+
+Raw SQL works immediately. To enable natural language queries, edit `config/query.yaml`
+and add an LLM provider (see [Connecting Your Own AI](#connecting-your-own-ai) below),
+then restart: `docker compose --profile with-minio restart query`
+
+### Standalone Docker
 
 1. Copy `config.yaml` and `.env.example` and configure:
 ```bash
@@ -253,18 +269,119 @@ Options:
         Show version and exit
 ```
 
+## Connecting Your Own AI
+
+The Query service supports three LLM providers for natural language queries. Without an LLM
+configured, the "Ask a Question" tab is disabled in the web UI — raw SQL always works.
+
+**How it works:** When you type a question like "show me failed logins from yesterday", the
+service sends your dataset schema (column names and types only) to the LLM, which generates
+a DuckDB SQL query. That SQL is then executed locally against your parquet files. Your actual
+data rows never leave your environment.
+
+### Anthropic (Claude)
+
+```yaml
+llm:
+  provider: "anthropic"
+  api_key: "sk-ant-api03-your-key-here"
+  model: "claude-sonnet-4-20250514"
+```
+
+Get an API key at https://console.anthropic.com/settings/keys
+
+Recommended models: `claude-sonnet-4-20250514` (default, fast), `claude-opus-4-20250514` (most capable)
+
+### OpenAI (GPT)
+
+```yaml
+llm:
+  provider: "openai"
+  api_key: "sk-your-key-here"
+  model: "gpt-4"
+```
+
+Get an API key at https://platform.openai.com/api-keys
+
+Recommended models: `gpt-4` (default), `gpt-4o`, `gpt-4-turbo`
+
+### Ollama (local, free, private)
+
+Run any model locally — no API key needed, no data leaves your network.
+
+```yaml
+llm:
+  provider: "ollama"
+  model: "llama3"
+  ollama_host: "http://host.docker.internal:11434"
+```
+
+1. Install Ollama: https://ollama.com
+2. Pull a model: `ollama pull llama3`
+3. Start the server: `ollama serve`
+
+**Docker networking:** Use `host.docker.internal` (Docker Desktop on macOS/Windows) or
+`172.17.0.1` (Linux Docker default gateway) to reach Ollama on the host from inside the
+query container. If running query outside Docker, use `http://localhost:11434`.
+
+Recommended models: `llama3` (8B, fast), `codellama` (good at SQL), `mixtral` (larger, more capable)
+
+### Environment Variables
+
+LLM settings can also be set via environment variables:
+
+| Variable | Description |
+|----------|-------------|
+| `BYTEFREEZER_QUERY_LLM_PROVIDER` | `anthropic`, `openai`, or `ollama` |
+| `BYTEFREEZER_QUERY_LLM_API_KEY` | API key (not required for Ollama) |
+| `BYTEFREEZER_QUERY_LLM_MODEL` | Model name |
+| `BYTEFREEZER_QUERY_LLM_OLLAMA_HOST` | Ollama server URL (default: `http://localhost:11434`) |
+
+### After Configuring
+
+Restart the query service to pick up the new config:
+
+```bash
+# Docker Compose (on-prem)
+docker compose --profile with-minio restart query
+
+# Standalone
+systemctl restart bytefreezer-query
+```
+
+Then open `http://<your-host>:8000`, select a dataset, and switch to the "Ask a Question" tab.
+
 ## Example Queries
 
+Natural language (requires LLM):
 - "Show me the last 100 events"
 - "Count events by type in the last 24 hours"
 - "What are the top 10 source IPs by event count?"
 - "Show failed events from yesterday"
 - "Find all events from IP 10.0.0.1"
 
+Raw SQL (always works):
+```sql
+-- Recent events
+SELECT * FROM read_parquet('PARQUET_PATH', hive_partitioning=true, union_by_name=true)
+ORDER BY BfTs DESC LIMIT 100
+
+-- Aggregate by source IP
+SELECT source_ip, COUNT(*) as count
+FROM read_parquet('PARQUET_PATH', hive_partitioning=true, union_by_name=true)
+GROUP BY source_ip ORDER BY count DESC LIMIT 10
+
+-- Filter by time partition
+SELECT * FROM read_parquet('PARQUET_PATH', hive_partitioning=true, union_by_name=true)
+WHERE year = 2026 AND month = 3 AND day = 12
+LIMIT 100
+```
+
 ## Security Notes
 
-- This service needs read access to your S3 bucket
-- LLM API calls send schema info (not raw data) to generate SQL
+- This service needs read access to your S3/MinIO bucket
+- LLM API calls send schema info (column names and types) — never your actual data rows
+- Ollama keeps everything local — no external API calls at all
 - Run within your VPC for production use
 - Consider adding authentication for exposed deployments
 

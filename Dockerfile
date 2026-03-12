@@ -23,7 +23,9 @@ RUN go mod download
 COPY . .
 
 # Build the binary
-RUN CGO_ENABLED=1 GOOS=linux go build -o bytefreezer-query .
+ARG VERSION=dev
+ARG BUILD_TIME=unknown
+RUN CGO_ENABLED=1 GOOS=linux go build -ldflags "-X main.version=${VERSION} -X main.buildTime=${BUILD_TIME}" -o bytefreezer-query .
 
 # Runtime stage
 FROM debian:bookworm-slim
