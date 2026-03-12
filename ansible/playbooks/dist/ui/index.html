@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ByteFreezer Query</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      margin: 0;
+      padding: 20px;
+    }
+    .container { max-width: 1200px; margin: 0 auto; padding-right: 280px; }
+    h1 {
+      color: #3b82f6;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    h1 img { height: 36px; }
+    h1 svg { width: 32px; height: 32px; }
+    .dataset-selector {
+      margin-bottom: 16px;
+    }
+    .dataset-selector label {
+      display: block;
+      margin-bottom: 6px;
+      color: #888;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .dataset-select {
+      width: 100%;
+      padding: 12px 14px;
+      font-size: 14px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #e2e8f0;
+      border-radius: 6px;
+      outline: none;
+      cursor: pointer;
+    }
+    .dataset-select:focus { border-color: #3b82f6; }
+    .dataset-select option { background: #1e293b; }
+    .account-info {
+      font-size: 12px;
+      color: #666;
+      margin-top: 6px;
+    }
+    .query-input {
+      width: 100%;
+      padding: 14px 16px;
+      font-size: 16px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #e2e8f0;
+      border-radius: 6px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .query-input:focus { border-color: #3b82f6; }
+    .query-input::placeholder { color: #64748b; }
+    .query-input:disabled { background: #1e293b; cursor: not-allowed; opacity: 0.6; }
+    .btn {
+      padding: 14px 28px;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      margin-top: 12px;
+      margin-right: 8px;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #3b82f6; }
+    .btn:disabled { background: #334155; cursor: not-allowed; }
+    .btn-secondary {
+      background: #334155;
+    }
+    .btn-secondary:hover { background: #475569; }
+    .sql-preview {
+      background: #0f172a;
+      padding: 16px;
+      border-radius: 6px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      margin: 16px 0;
+      border: 1px solid #334155;
+      line-height: 1.5;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .sql-preview:focus {
+      outline: 1px solid #3b82f6;
+    }
+    .results-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+      font-size: 14px;
+    }
+    .results-table th, .results-table td {
+      padding: 10px 14px;
+      border: 1px solid #334155;
+      text-align: left;
+      max-width: 300px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .results-table th {
+      background: #1e293b;
+      font-weight: 600;
+      position: sticky;
+      top: 0;
+    }
+    .results-table tr:hover { background: #1e293b; }
+    .results-table td:hover {
+      white-space: normal;
+      word-break: break-all;
+    }
+    .error {
+      color: #ff6b6b;
+      padding: 16px;
+      background: #2d1f1f;
+      border-radius: 6px;
+      margin-top: 16px;
+      border: 1px solid #5c2a2a;
+    }
+    .stats {
+      color: #888;
+      font-size: 14px;
+      margin: 12px 0;
+    }
+    .stats span {
+      margin-right: 20px;
+    }
+    .schema-sidebar {
+      position: fixed;
+      right: 20px;
+      top: 20px;
+      width: 260px;
+      background: #1e293b;
+      padding: 16px;
+      border-radius: 6px;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+      font-size: 13px;
+    }
+    .schema-sidebar h3 {
+      margin: 0 0 12px 0;
+      color: #3b82f6;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .schema-column {
+      padding: 4px 0;
+      border-bottom: 1px solid #334155;
+    }
+    .schema-column:last-child { border-bottom: none; }
+    .schema-column b { color: #f1f5f9; }
+    .schema-column span { color: #94a3b8; font-size: 12px; }
+    .spinner {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid #fff;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .results-container {
+      max-height: 500px;
+      overflow: auto;
+      margin-top: 16px;
+      border-radius: 6px;
+    }
+    .no-results {
+      color: #94a3b8;
+      padding: 20px;
+      text-align: center;
+      background: #1e293b;
+      border-radius: 6px;
+    }
+    .example-queries {
+      margin-top: 16px;
+      padding: 16px;
+      background: #1e293b;
+      border-radius: 6px;
+    }
+    .example-queries h4 {
+      margin: 0 0 12px 0;
+      color: #94a3b8;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+    .example-query {
+      padding: 8px 12px;
+      background: #334155;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .example-query:hover { background: #475569; }
+    .example-query:last-child { margin-bottom: 0; }
+    .loading-datasets {
+      color: #888;
+      font-style: italic;
+    }
+    .query-warnings {
+      padding: 12px 16px;
+      background: #2d2a1f;
+      border: 1px solid #5c5a2a;
+      border-radius: 6px;
+      margin: 12px 0;
+      font-size: 13px;
+    }
+    .query-warnings .warning-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 6px 0;
+    }
+    .query-warnings .warning-item:first-child { margin-top: 0; }
+    .query-warnings .warning-item:last-child { margin-bottom: 0; }
+    .query-warnings .warning-icon { color: #f0ad4e; }
+    .query-warnings .info-icon { color: #5bc0de; }
+    .query-warnings .danger-icon { color: #d9534f; }
+    .query-warnings .size-info {
+      color: #888;
+    }
+    .query-estimate {
+      padding: 10px 16px;
+      background: #1a2a3e;
+      border: 1px solid #2a4a6e;
+      border-radius: 6px;
+      margin: 12px 0;
+      font-size: 13px;
+      color: #aaa;
+    }
+    .query-estimate b { color: #fff; }
+    .limits-info {
+      display: inline-block;
+      padding: 8px 14px;
+      background: #422006;
+      border: 1px solid #f59e0b;
+      border-radius: 6px;
+      font-size: 13px;
+      color: #fcd34d;
+    }
+    .limits-info span { color: #fbbf24; font-weight: 500; }
+    .demo-notice {
+      padding: 12px 16px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-left: 3px solid #3b82f6;
+      border-radius: 6px;
+      font-size: 13px;
+      color: #94a3b8;
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+    .demo-notice strong { color: #e2e8f0; }
+    .demo-notice a { color: #60a5fa; text-decoration: none; }
+    .demo-notice a:hover { text-decoration: underline; }
+    .demo-info-popup {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #334155;
+    }
+    .demo-info-popup p {
+      margin: 10px 0 4px 0;
+      color: #e2e8f0;
+      font-size: 13px;
+    }
+    .demo-info-popup p:first-child { margin-top: 0; }
+    .demo-info-popup ul {
+      margin: 0;
+      padding-left: 18px;
+      color: #94a3b8;
+      font-size: 12px;
+    }
+    .demo-info-popup li { margin: 3px 0; }
+    .demo-info-popup b { color: #e2e8f0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>
+      <svg stroke="#3b82f6" fill="none" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" height="32" width="32" xmlns="http://www.w3.org/2000/svg"><path d="M10 4l2 1l2 -1"></path><path d="M12 2v6.5l3 1.72"></path><path d="M17.928 6.268l.134 2.232l1.866 1.232"></path><path d="M20.66 7l-5.629 3.25l.01 3.458"></path><path d="M19.928 14.268l-1.866 1.232l-.134 2.232"></path><path d="M20.66 17l-5.629 -3.25l-2.99 1.738"></path><path d="M14 20l-2 -1l-2 1"></path><path d="M12 22v-6.5l-3 -1.72"></path><path d="M6.072 17.732l-.134 -2.232l-1.866 -1.232"></path><path d="M3.34 17l5.629 -3.25l-.01 -3.458"></path><path d="M4.072 9.732l1.866 -1.232l.134 -2.232"></path><path d="M3.34 7l5.629 3.25l2.99 -1.738"></path></svg>
+      <span style="font-size: 1.25rem; font-weight: 600; color: #f1f5f9;">bytefreezer</span>
+      <span style="font-size: 1.25rem; font-weight: 400; color: #94a3b8;">Query</span>
+    </h1>
+
+    <div class="demo-notice">
+      <strong>Demo Environment</strong> — This is a demonstration of bytefreezer-query using sample eBPF data. Not for commercial use.
+      For production workloads, use <a href="https://docs.bytefreezer.com/querying" target="_blank">DuckDB directly</a> or integrate with your preferred analytics tools.
+      <a href="#" onclick="toggleDemoInfo(); return false;">more on performance</a>
+      <div id="demoInfoPopup" class="demo-info-popup" style="display: none;">
+        <p><b>Query Optimizations</b></p>
+        <ul>
+          <li>Data is partitioned by hour for efficient time filtering</li>
+          <li>Parquet files are pre-sorted by timestamp</li>
+          <li>"Last N events" queries skip ORDER BY (data already recent)</li>
+          <li>Aggregations (COUNT, GROUP BY) are fast - small result sets</li>
+        </ul>
+        <p><b>For Best Performance</b></p>
+        <ul>
+          <li>Use "recent" or "last N" queries - reads fewer files</li>
+          <li>Avoid ORDER BY on large result sets over remote storage</li>
+          <li>Add filters (WHERE) to reduce data scanned</li>
+          <li>Use LIMIT to cap results</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="dataset-selector">
+      <label>Dataset</label>
+      <select class="dataset-select" id="datasetSelect" onchange="onDatasetChange()">
+        <option value="">Loading datasets...</option>
+      </select>
+      <div class="account-info" id="accountInfo"></div>
+    </div>
+
+    <input type="text" class="query-input" id="questionInput"
+           placeholder="Select a dataset first..." disabled>
+    <div style="display: flex; align-items: center; gap: 12px; margin-top: 12px;">
+      <button class="btn" id="askBtn" onclick="askQuestion()" disabled style="margin-top: 0;">Ask</button>
+      <div class="limits-info" id="limitsInfo" style="margin-top: 0;">
+        Loading limits...
+      </div>
+    </div>
+
+    <div id="sqlPreview" class="sql-preview" style="display:none;" contenteditable="true"></div>
+    <div id="queryWarnings" class="query-warnings" style="display:none;"></div>
+    <div id="sqlButtons" style="display:none;">
+      <button class="btn" onclick="runSql()">Execute Query</button>
+      <button class="btn btn-secondary" onclick="regenerateQuery()">Regenerate</button>
+    </div>
+
+    <div id="error" class="error" style="display:none;"></div>
+    <div id="stats" class="stats"></div>
+
+    <div id="resultsContainer" class="results-container">
+      <div id="results"></div>
+    </div>
+
+    <div class="example-queries">
+      <h4>Example queries</h4>
+      <div class="example-query" onclick="setQuestion('Show me the last 100 events')">
+        Show me the last 100 events
+      </div>
+      <div class="example-query" onclick="setQuestion('Count events by type in the last 24 hours')">
+        Count events by type in the last 24 hours
+      </div>
+      <div class="example-query" onclick="setQuestion('What are the top 10 source IPs by event count?')">
+        What are the top 10 source IPs by event count?
+      </div>
+      <div class="example-query" onclick="setQuestion('Show failed events from yesterday')">
+        Show failed events from yesterday
+      </div>
+    </div>
+
+  </div>
+
+  <div class="schema-sidebar" id="schema">
+    <h3>Schema</h3>
+    <div id="schemaContent">Select a dataset to view schema</div>
+  </div>
+
+  <script>
+    let currentSql = '';
+    let selectedDatasetId = '';
+    let currentQuestion = '';
+    let datasetFiles = []; // Cache of files with sizes
+    let queryLimits = { max_time_range_hours: 24, max_row_limit: 100, allow_order_by: false };
+
+    async function loadLimits() {
+      try {
+        const res = await fetch('/api/v1/limits');
+        const data = await res.json();
+        queryLimits = data;
+
+        let limitsText = 'Demo limits: ';
+        limitsText += `<span>${data.max_time_range_hours}hr</span> time range, `;
+        limitsText += `<span>${data.max_row_limit}</span> row max`;
+        if (!data.allow_order_by) {
+          limitsText += ', no ORDER BY';
+        }
+        document.getElementById('limitsInfo').innerHTML = limitsText;
+      } catch (e) {
+        document.getElementById('limitsInfo').textContent = 'Demo limits: 24hr time range, 100 row max, no ORDER BY';
+      }
+    }
+
+    function formatBytes(bytes) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    async function loadDatasets() {
+      try {
+        const res = await fetch('/api/v1/datasets');
+        const data = await res.json();
+
+        const select = document.getElementById('datasetSelect');
+        select.innerHTML = '';
+
+        if (data.error) {
+          select.innerHTML = '<option value="">Error loading datasets</option>';
+          document.getElementById('accountInfo').textContent = 'Error: ' + data.error;
+          return;
+        }
+
+        document.getElementById('accountInfo').textContent = 'Account: ' + data.account_id;
+
+        if (!data.datasets || data.datasets.length === 0) {
+          select.innerHTML = '<option value="">No datasets found</option>';
+          return;
+        }
+
+        select.innerHTML = '<option value="">Select a dataset...</option>' +
+          data.datasets.map(d =>
+            '<option value="' + d.id + '" data-size="' + d.size_bytes + '" data-files="' + d.file_count + '">' +
+            d.name + ' (' + formatBytes(d.size_bytes) + ', ' + d.file_count + ' files)</option>'
+          ).join('');
+
+        // Auto-select if only one dataset
+        if (data.datasets.length === 1) {
+          select.value = data.datasets[0].id;
+          onDatasetChange();
+        }
+      } catch (e) {
+        document.getElementById('datasetSelect').innerHTML =
+          '<option value="">Failed to load datasets</option>';
+        document.getElementById('accountInfo').textContent = 'Error: ' + e.message;
+      }
+    }
+
+    function onDatasetChange() {
+      selectedDatasetId = document.getElementById('datasetSelect').value;
+      const input = document.getElementById('questionInput');
+      const btn = document.getElementById('askBtn');
+
+      if (selectedDatasetId) {
+        input.disabled = false;
+        input.placeholder = "Ask a question... e.g., 'show me failed logins in the last hour'";
+        btn.disabled = false;
+        loadSchema();
+      } else {
+        input.disabled = true;
+        input.placeholder = 'Select a dataset first...';
+        btn.disabled = true;
+        document.getElementById('schemaContent').innerHTML = 'Select a dataset to view schema';
+      }
+
+      // Clear previous results
+      clearResults();
+      hideError();
+      hideWarnings();
+      document.getElementById('sqlPreview').style.display = 'none';
+      document.getElementById('sqlButtons').style.display = 'none';
+    }
+
+    async function loadSchema() {
+      if (!selectedDatasetId) return;
+
+      document.getElementById('schemaContent').innerHTML = 'Loading...';
+
+      try {
+        const res = await fetch('/api/v1/schema?dataset_id=' + encodeURIComponent(selectedDatasetId));
+        const data = await res.json();
+        if (data.error) {
+          document.getElementById('schemaContent').innerHTML = '<div class="error">' + data.error + '</div>';
+          return;
+        }
+        document.getElementById('schemaContent').innerHTML =
+          data.columns.map(c =>
+            '<div class="schema-column"><b>' + c.name + '</b> <span>' + c.type + '</span></div>'
+          ).join('');
+      } catch (e) {
+        document.getElementById('schemaContent').innerHTML =
+          '<div class="error">Failed to load schema: ' + e.message + '</div>';
+      }
+    }
+
+    function setQuestion(q) {
+      if (!selectedDatasetId) {
+        alert('Please select a dataset first');
+        return;
+      }
+      document.getElementById('questionInput').value = q;
+      document.getElementById('questionInput').focus();
+    }
+
+    async function askQuestion() {
+      if (!selectedDatasetId) {
+        showError('Please select a dataset first');
+        return;
+      }
+
+      const question = document.getElementById('questionInput').value.trim();
+      if (!question) return;
+
+      currentQuestion = question;
+      setLoading(true);
+      hideError();
+      clearResults();
+      hideWarnings();
+
+      try {
+        // Only generate SQL, don't execute
+        const res = await fetch('/api/v1/query/generate', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            dataset_id: selectedDatasetId,
+            question: question
+          })
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          showError(data.error);
+        } else {
+          currentSql = data.sql;
+          document.getElementById('sqlPreview').textContent = data.sql;
+          document.getElementById('sqlPreview').style.display = 'block';
+          document.getElementById('sqlButtons').style.display = 'block';
+
+          // Analyze the query and show warnings
+          analyzeQuery(data.sql);
+        }
+      } catch (e) {
+        showError('Request failed: ' + e.message);
+      }
+      setLoading(false);
+    }
+
+    function analyzeQuery(sql) {
+      const warnings = [];
+      const upperSql = sql.toUpperCase();
+
+      // Check for ORDER BY (slow over network)
+      if (upperSql.includes('ORDER BY') && !upperSql.includes('ORDER BY COUNT')) {
+        // ORDER BY on aggregates is fine, ORDER BY on raw data is slow
+        const hasGroupBy = upperSql.includes('GROUP BY');
+        if (!hasGroupBy) {
+          warnings.push({
+            type: 'warning',
+            text: 'ORDER BY requires scanning all matching data - may be slow over network'
+          });
+        }
+      }
+
+      // Extract file paths and estimate size
+      const fileMatches = sql.match(/s3:\/\/[^'"\s\]]+/g) || [];
+      const isGlobQuery = sql.includes('/**/*.parquet') || sql.includes('hive_partitioning=true');
+
+      // Check if using recent files list (array of specific files)
+      const recentFilesMatch = sql.match(/\[([^\]]+)\]/);
+      let fileCount = 0;
+      let estimatedSize = 0;
+
+      if (recentFilesMatch) {
+        // Count files in the array
+        const filesInArray = recentFilesMatch[1].match(/s3:\/\/[^'",]+/g) || [];
+        fileCount = filesInArray.length;
+
+        // Estimate size from cached dataset files
+        filesInArray.forEach(path => {
+          const file = datasetFiles.find(f => path.includes(f.key));
+          if (file) estimatedSize += file.size;
+        });
+
+        if (fileCount > 0) {
+          warnings.push({
+            type: 'info',
+            text: `Scanning ${fileCount} recent file${fileCount > 1 ? 's' : ''} (~${formatBytes(estimatedSize || fileCount * 50 * 1024 * 1024)})`
+          });
+        }
+      } else if (isGlobQuery) {
+        // Full dataset scan
+        const select = document.getElementById('datasetSelect');
+        const option = select.options[select.selectedIndex];
+        if (option) {
+          fileCount = parseInt(option.dataset.files) || 0;
+          estimatedSize = parseInt(option.dataset.size) || 0;
+        }
+
+        if (fileCount > 10) {
+          warnings.push({
+            type: 'danger',
+            text: `Full dataset scan: ${fileCount} files (~${formatBytes(estimatedSize)}) - may be slow!`
+          });
+        } else if (fileCount > 0) {
+          warnings.push({
+            type: 'warning',
+            text: `Scanning ${fileCount} files (~${formatBytes(estimatedSize)})`
+          });
+        }
+      }
+
+      // Check for missing LIMIT
+      if (!upperSql.includes('LIMIT')) {
+        warnings.push({
+          type: 'warning',
+          text: 'No LIMIT clause - consider adding one to avoid large result sets'
+        });
+      }
+
+      // Display warnings
+      if (warnings.length > 0) {
+        showWarnings(warnings);
+      }
+    }
+
+    function showWarnings(warnings) {
+      const container = document.getElementById('queryWarnings');
+      container.innerHTML = warnings.map(w => {
+        const iconClass = w.type === 'danger' ? 'danger-icon' : (w.type === 'warning' ? 'warning-icon' : 'info-icon');
+        const icon = w.type === 'danger' ? '⚠' : (w.type === 'warning' ? '⚡' : 'ℹ');
+        return `<div class="warning-item"><span class="${iconClass}">${icon}</span> ${w.text}</div>`;
+      }).join('');
+      container.style.display = 'block';
+    }
+
+    function hideWarnings() {
+      document.getElementById('queryWarnings').style.display = 'none';
+    }
+
+    async function regenerateQuery() {
+      if (currentQuestion) {
+        document.getElementById('questionInput').value = currentQuestion;
+        askQuestion();
+      }
+    }
+
+    async function runSql() {
+      const sql = document.getElementById('sqlPreview').textContent.trim();
+      if (!sql) return;
+
+      setLoading(true);
+      hideError();
+
+      try {
+        const res = await fetch('/api/v1/query/sql', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({sql})
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          showError(data.error);
+        } else {
+          renderResults(data);
+        }
+      } catch (e) {
+        showError('Request failed: ' + e.message);
+      }
+      setLoading(false);
+    }
+
+    function renderResults(data) {
+      document.getElementById('stats').innerHTML =
+        '<span>' + data.row_count + ' rows</span>' +
+        '<span>' + data.execution_time_ms + ' ms</span>';
+
+      if (!data.rows || data.rows.length === 0) {
+        document.getElementById('results').innerHTML = '<div class="no-results">No results found</div>';
+        return;
+      }
+
+      let html = '<table class="results-table"><thead><tr>';
+      data.columns.forEach(col => html += '<th>' + escapeHtml(col) + '</th>');
+      html += '</tr></thead><tbody>';
+      data.rows.forEach(row => {
+        html += '<tr>';
+        row.forEach(cell => {
+          const val = cell === null ? '<span style="color:#666">null</span>' : escapeHtml(String(cell));
+          html += '<td title="' + escapeHtml(String(cell || '')) + '">' + val + '</td>';
+        });
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      document.getElementById('results').innerHTML = html;
+    }
+
+    function setLoading(loading) {
+      const btn = document.getElementById('askBtn');
+      btn.disabled = loading || !selectedDatasetId;
+      btn.innerHTML = loading ? '<span class="spinner"></span>Thinking...' : 'Ask';
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('error');
+      el.textContent = msg;
+      el.style.display = 'block';
+    }
+
+    function hideError() {
+      document.getElementById('error').style.display = 'none';
+    }
+
+    function clearResults() {
+      document.getElementById('results').innerHTML = '';
+      document.getElementById('stats').innerHTML = '';
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function toggleDemoInfo() {
+      const popup = document.getElementById('demoInfoPopup');
+      popup.style.display = popup.style.display === 'none' ? 'block' : 'none';
+    }
+
+    // Allow Enter key to submit
+    document.getElementById('questionInput').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter' && selectedDatasetId) askQuestion();
+    });
+
+    // Re-analyze query when user edits SQL directly
+    document.getElementById('sqlPreview').addEventListener('input', (e) => {
+      const sql = e.target.textContent.trim();
+      if (sql) {
+        analyzeQuery(sql);
+      }
+    });
+
+    // Load limits and datasets on page load
+    loadLimits();
+    loadDatasets();
+  </script>
+</body>
+</html>
